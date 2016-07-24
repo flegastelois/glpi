@@ -100,14 +100,6 @@ function xmlbackup() {
    //File path
    $A->FilePath = $chemin;
 
-   // Type of layout : 1,2,3,4
-   // For details about Type see file genxml.php
-   if (empty($Type)) {
-      $A->Type = 4;
-   } else {
-      $A->Type = $Type;
-   }
-
    //appelle de la methode gerant le fichier XML
    $A->DoXML();
 
