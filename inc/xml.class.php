@@ -131,7 +131,10 @@ class XML {
       fputs($fp, "<?xml version=\"1.0\"?>\n");
       fputs($fp, "<dataxml>\n");
 
-      foreach ($this->SqlString as $strqry) {
+      foreach ($this->SqlString as $qrytab) {
+         $table = $qrytab['table'];
+         $strqry = $qrytab['query'];
+
          if ($strqry == "") {
             $this->IsError     = 1;
             $this->ErrorString = "Error the query can't be a null string";
@@ -145,21 +148,22 @@ class XML {
             return -1;
          }
          // OK... let's create XML ;)
-         fputs($fp, "   <fields>\n");
+         fputs($fp, "   <table tablename=\"".$table."\">\n");
+         fputs($fp, "      <fields>\n");
          $i = 0;
          $FieldsVector = array();
          while ($i < $DB->num_fields ($result)) {
             $name = $DB->field_name($result,$i);
-            fputs($fp, "      <field>".$name."</field>\n");
+            fputs($fp, "         <field>".$name."</field>\n");
             $FieldsVector[] = $name;
             $i++;
          }
 
-         fputs($fp, "   </fields>\n");
+         fputs($fp, "      </fields>\n");
          // And NOW the Data ...
-         fputs($fp, "   <rows>\n");
+         fputs($fp, "      <rows>\n");
          while ($row = $DB->fetch_row($result)) {
-            fputs($fp, "      <row>\n");
+            fputs($fp, "         <row>\n");
             for ($j=0 ; $j<$i ; $j++) {
                $FieldName  = "";   // Name of TAG
                $Attributes = "";
@@ -180,12 +184,13 @@ class XML {
                      $FieldName = "data";
                      $Attributes = " fieldname=\"".$FieldsVector[$j]."\"";
                }
-               fputs($fp, "         <".$FieldName.$Attributes.">".
+               fputs($fp, "            <".$FieldName.$Attributes.">".
                      Toolbox::encodeInUtf8(htmlspecialchars($row[$j]))."</".$FieldName.">\n");
             }
-            fputs($fp, "      </row>\n");
+            fputs($fp, "         </row>\n");
          }
-         fputs($fp, "   </rows>\n");
+         fputs($fp, "      </rows>\n");
+         fputs($fp, "   </table>\n");
 
          $DB->free_result($result);
       }

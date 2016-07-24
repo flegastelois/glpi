@@ -81,8 +81,8 @@ function xmlbackup() {
    while ($line = $DB->fetch_row($result)) {
       $table = $line[0];
 
-      $query[$i] = "SELECT *
-                    FROM `$table`";
+      $query[$i] = array("table" => $table,
+                         "query" => 'SELECT * FROM `'.$table.'`');
       $i++;
    }
 
