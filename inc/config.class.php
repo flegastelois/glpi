@@ -840,6 +840,17 @@ class Config extends CommonDBTM {
       Dropdown::showYesNo("use_anonymous_followups", $CFG_GLPI["use_anonymous_followups"]);
       echo "</td></tr>";
 
+      echo "<tr class='tab_bg_2'>";
+      echo "<td>" .__('Filter the list of watchers in the simplified interface') . "</td><td>";
+      $values = array(  'id'           => __('Only current user'),
+                        'interface'    => __('Users with central interface'),
+                        'all'          => __('All users'),
+                        'delegate'     => __('Users in same groups where delegate'),
+                        'groups'       => __('Users in same groups'));
+      Dropdown::showFromArray('filter_watchers_list', $values, 
+                                 array('value' => $CFG_GLPI["filter_watchers_list"]));
+      echo "</td><td colspan='2'></td></tr>";
+
       echo "</table>";
 
       echo "<table class='tab_cadre_fixe'>";

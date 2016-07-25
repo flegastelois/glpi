@@ -843,6 +843,9 @@ function update0905to91() {
    $DB->queryOrDie($query, "glpi_entities root_entity change autoclose_delay value from -1 to 0");
 
 
+   /************** Filter the list of watchers in the simplified interface **************/
+   Config::setConfigurationValues('core', array('filter_watchers_list' => 'groups'));
+
    // ************ Keep it at the end **************
    $migration->executeMigration();
 
