@@ -73,5 +73,11 @@ if ($_POST["type"]) {
    }
 }
 
+$itilcat = new ItilCategory;
+$itilcat->getEmpty();
+$itilcat->fields['itilcategories_id'] = 0;
+$itilcat->fields['type'] = $_REQUEST['type'];
+$opt['that'] = $itilcat;
+
 ItilCategory::dropdown($opt);
 ?>

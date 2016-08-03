@@ -50,7 +50,38 @@ class ITILCategory extends CommonTreeDropdown {
 
    static $rightname       = 'itilcategory';
 
+   static function dropdown($options = array()) {
+      global $CFG_GLPI;
 
+      $that = $options['that'];
+
+ echo '<script type="text/javascript">
+        function getChildCategories(initial_category, tickettype) {
+
+          $.ajax({
+            type: "POST", // methode de transmission des données au fichier php
+            url: "' . $CFG_GLPI['root_doc'] . '/ajax/findCategories.php", // url du fichier php
+
+            data: "id=" + initial_category + "&" +
+                "type=" + tickettype ,
+            success: function (result) {
+
+              $("#show_category_by_type").html(result);
+              /*$(\'select[id^="category_select"]\').each(function () {
+                 $("#"+this.id).select2({ width: \'resolve\' });
+              });*/
+
+            },
+            error: function () {
+              alert("ajax error");
+            }
+          });
+        }
+
+        getChildCategories('.$that->fields["itilcategories_id"].', '.$that->fields['type'].');
+
+      </script>';
+   }
 
    function getAdditionalFields() {
 

@@ -3001,7 +3001,8 @@ class Ticket extends CommonITILObject {
          $opt['display_emptychoice'] = false;
       }
 
-      ITILCategory::dropdown($opt);
+      //ITILCategory::dropdown($opt);
+      Dropdown::show('ITILCategory',$opt);
       echo "</td></tr>";
 
 
@@ -3973,9 +3974,19 @@ class Ticket extends CommonITILObject {
             default :
                break;
          }
-         echo "<span id='show_category_by_type'>";
-         ITILCategory::dropdown($opt);
-         echo "</span>";
+         //echo "<span id='show_category_by_type'>";
+         //ITILCategory::dropdown($opt);
+         //echo "</span>";
+
+        echo '<input type="hidden" name="itilcategories_id" id="itilcategories_id" value="0"  />';
+        echo "<div id='show_category_by_type' style='float:left'></div>";
+        $opt['that'] = $this;
+        ITILCategory::dropdown($opt);
+        echo '<img alt="" title="'.__('Add').'" src="'.$CFG_GLPI['root_doc'].'/pics/add_dropdown.png"
+        style="cursor:pointer; margin-left:2px; margin-top: 5px;"
+              onclick="var w = window.open(\''.$CFG_GLPI['root_doc'].'/front/itilcategory.form.php?popup=1&amp;rand=1966641225\'
+             ,\'glpipopup\', \'height=400, width=1000, top=100, left=100, scrollbars=yes\' );w.focus();">';
+
       } else {
          echo Dropdown::getDropdownName("glpi_itilcategories", $this->fields["itilcategories_id"]);
       }
