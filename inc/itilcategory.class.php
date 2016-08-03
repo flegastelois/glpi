@@ -53,6 +53,10 @@ class ITILCategory extends CommonTreeDropdown {
    static function dropdown($options = array()) {
       global $CFG_GLPI;
 
+      if (!isset($options['that'])) {
+        return parent::dropdown($options);
+      }
+
       $that = $options['that'];
 
  echo '<script type="text/javascript">
