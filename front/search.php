@@ -46,26 +46,55 @@ if (!$CFG_GLPI['allow_search_global']) {
 if (isset($_GET["globalsearch"])) {
    $searchtext=trim($_GET["globalsearch"]);
 
+   $_SESSION["glpisearchcount"] = array();
+   $strict_search = isset($_GET['strict_search']) && ($_GET['strict_search'] == 1);
+
    foreach ($CFG_GLPI["globalsearch_types"] as $itemtype) {
       if (($item = getItemForItemtype($itemtype))
           && $item->canView()) {
          $_GET["reset"]        = 'reset';
+
+         $inventorynumber_id = null;
+         foreach (Search::getOptions($itemtype) as $option_id => $option) {
+            if (isset($option['field']) && ($option['field'] == 'otherserial')) {
+               $inventorynumber_id = $option_id;
+            }
+         }
 
          $params                 = Search::manageParams($itemtype,$_GET, false,true);
          $params["display_type"] = Search::GLOBAL_SEARCH;
 
          $count                  = count($params["criteria"]);
 
-         $params["criteria"][$count]["field"]       = 'view';
-         $params["criteria"][$count]["searchtype"]  = 'contains';
-         $params["criteria"][$count]["value"]       = $searchtext;
-//          $_SESSION["glpisearchcount"][$itemtype]  = $count+1;
-//          $_SESSION["glpisearchcount2"][$itemtype] = 0;
+         if ($strict_search) {
+            if (is_null($inventorynumber_id)) continue;
+            $params["criteria"][$count]["field"]       = $inventorynumber_id;
+            $params["criteria"][$count]["searchtype"]  = ($itemtype == 'Software')
+                                                            ? 'contains'
+                                                            : 'equals';
+            $params["criteria"][$count]["value"]       = $searchtext;
+         } else {
+            $params["criteria"][$count]["field"]       = 'view';
+            $params["criteria"][$count]["searchtype"]  = 'contains';
+            $params["criteria"][$count]["value"]       = $searchtext;
+         }
 
          Search::showList($itemtype, $params);
          echo "<hr>";
       }
    }
+
+   foreach ($CFG_GLPI["globalsearch_types"] as $itemtype) {
+
+      if (!isset($_SESSION['glpisearchcount'][$itemtype])) continue;
+
+      if ($_SESSION['glpisearchcount'][$itemtype]['totalcount'] == 1) {
+         $id = $_SESSION['glpisearchcount'][$itemtype]['rows'][0]['raw']['id'];
+         $url = Toolbox::getItemTypeFormURL($itemtype) . '?id='.$id;
+         Html::redirect($url);
+      }
+   }
+
 }
 
 Html::footer();

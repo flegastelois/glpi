@@ -1564,7 +1564,21 @@ class Html {
       if ($CFG_GLPI['allow_search_global']) {
          echo "<form method='get' action='".$CFG_GLPI["root_doc"]."/front/search.php'>\n";
          echo "<span id='champRecherche'><input size='15' type='text' name='globalsearch'
-                                         placeholder='". __s('Search')."'>";
+                                          id='globalsearch' placeholder='". __s('Search')."'>";
+            echo "<input type='hidden' name='strict_search' id='strict_search' value='0' />";
+
+echo <<<EOSCRIPT
+<script type="text/javascript">
+document.addEventListener("keydown", function(e) {
+   if ((e || window.event).keyCode == 19) {
+      document.getElementById("globalsearch").focus();
+      document.getElementById("globalsearch").style.background = '#003DF5';
+      document.getElementById("globalsearch").style.border = '2px inset #003DF5';
+      document.getElementById("strict_search").value = 1;
+   }
+});
+</script>
+EOSCRIPT;
          echo "</span>";
          Html::closeForm();
       }

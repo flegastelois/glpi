@@ -1186,6 +1186,9 @@ class Search {
 
       // If the begin of the view is before the number of items
       if ($data['data']['count'] > 0) {
+
+         $_SESSION["glpisearchcount"][$data['itemtype']] = $data['data'];
+
          // Display pager only for HTML
          if ($data['display_type'] == self::HTML_OUTPUT) {
             // For plugin add new parameter if available
