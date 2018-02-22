@@ -30,17 +30,20 @@
  * ---------------------------------------------------------------------
  */
 
+chdir(__DIR__);
+
 include ('../inc/includes.php');
 
-$DB->query("SET FOREIGN_KEY_CHECKS = '0';");
 $result = $DB->list_tables();
 $numtab = 0;
 
+/*
 while ($t=$DB->fetch_array($result)) {
    $query = "ALTER TABLE `$t[0]`
              TYPE = innodb";
    $DB->query($query);
 }
+*/
 
 $relations = getDbRelations();
 
@@ -81,10 +84,10 @@ foreach ($query as $table => $constraints) {
       $q .= $c;
    }
 
-   echo $q."<br><br>";
-   $DB->query($q) or die($q." ".$DB->error());
+   echo $q.";\n";
+   //$DB->query($q) or die($q." ".$DB->error());
 
 }
 
-$DB->query("SET FOREIGN_KEY_CHECKS = 1;");
+//$DB->query("SET FOREIGN_KEY_CHECKS = 1;");
 
