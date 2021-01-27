@@ -83,7 +83,10 @@ class RuleSoftwareCategory extends Rule {
       $criterias['comment']['table']      = 'glpi_softwares';
 
       $criterias['_system_category']['field'] = 'name';
-      $criterias['_system_category']['name']  = __('Category from inventory tool');
+      $criterias['_system_category']['name']  = __('Inventory tool - System category');
+
+      $criterias['_from']['field']            = 'name';
+      $criterias['_from']['name']             = __('Inventory tool - From');
 
       return $criterias;
    }
@@ -98,8 +101,11 @@ class RuleSoftwareCategory extends Rule {
       $actions['softwarecategories_id']['table'] = 'glpi_softwarecategories';
       $actions['softwarecategories_id']['force_actions'] = ['assign','regex_result'];
 
-      $actions['_import_category']['name'] = __('Import category from inventory tool');
-      $actions['_import_category']['type'] = 'yesonly';
+      $actions['_import_system_category']['name'] = __('Inventory tool - Import system category');
+      $actions['_import_system_category']['type'] = 'yesonly';
+
+      $actions['_import_from']['name']    = __('Inventory tool - Import from');
+      $actions['_import_from']['type']    = 'yesonly';
 
       $actions['_ignore_import']['name']  = __('To be unaware of import');
       $actions['_ignore_import']['type']  = 'yesonly';

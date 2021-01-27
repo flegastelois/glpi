@@ -90,7 +90,10 @@ class RuleDictionnarySoftware extends Rule {
       $criterias['entities_id']['type']   = 'dropdown';
 
       $criterias['_system_category']['field'] = 'name';
-      $criterias['_system_category']['name']  = __('Category from inventory tool');
+      $criterias['_system_category']['name']  = __('Inventory tool - System category');
+
+      $criterias['_from']['field']            = 'name';
+      $criterias['_from']['name']             = __('Inventory tool - From');
 
       return $criterias;
    }

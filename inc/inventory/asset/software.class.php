@@ -62,8 +62,9 @@ class Software extends InventoryAsset
       $mapping = [
          'publisher'       => 'manufacturers_id',
          'comments'        => 'comment',
-         'install_date'     => 'date_install',
-         'system_category' => '_system_category'
+         'install_date'    => 'date_install',
+         'system_category' => '_system_category',
+         'from'            => '_from'
       ];
 
       //Dictionnary for softwares
@@ -126,7 +127,8 @@ class Software extends InventoryAsset
                   "manufacturer"       => $val->manufacturers_id ?? 0,
                   "old_version"        => $val->version ?? null,
                   "entities_id"        => $entities_id_software,
-                  "_system_category"   => $val->_system_category ?? null
+                  "_system_category"   => $val->_system_category ?? null,
+                  "_from"              => $val->_from ?? null
                ];
                $res_rule = $rulecollection->processAllRules($rule_input);
             }

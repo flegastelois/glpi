@@ -67,6 +67,9 @@ class RuleSoftwareCategoryCollection extends RuleCollection {
       if (isset($software["_system_category"])) {
          $params["_system_category"] = $software["_system_category"];
       }
+      if (isset($software["_from"])) {
+         $params["_from"] = $software["_from"];
+      }
 
       if (isset($software["manufacturers_id"])) {
          $params["manufacturer"] = Dropdown::getDropdownName("glpi_manufacturers",

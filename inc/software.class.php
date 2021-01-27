@@ -154,10 +154,14 @@ class Software extends CommonDBTM {
                $input["softwarecategories_id"] = 0;
             } else if (isset($result["softwarecategories_id"])) {
                $input["softwarecategories_id"] = $result["softwarecategories_id"];
-            } else if (isset($result["_import_category"])) {
+            } else if (isset($result["_import_system_category"])) {
                $softCat = new SoftwareCategory();
                $input["softwarecategories_id"]
                   = $softCat->importExternal($input["_system_category"]);
+            } else if (isset($result["_import_from_category"])) {
+               $softCat = new SoftwareCategory();
+               $input["softwarecategories_id"]
+                  = $softCat->importExternal($input["_from"]);
             }
          } else {
             $input["softwarecategories_id"] = 0;
@@ -784,10 +788,14 @@ class Software extends CommonDBTM {
             $input["softwarecategories_id"] = 0;
          } else if (isset($result["softwarecategories_id"])) {
             $input["softwarecategories_id"] = $result["softwarecategories_id"];
-         } else if (isset($result["_import_category"])) {
+         } else if (isset($result["_import_system_category"])) {
             $softCat = new SoftwareCategory();
             $input["softwarecategories_id"]
                = $softCat->importExternal($input["_system_category"]);
+         } else if (isset($result["_import_from"])) {
+            $softCat = new SoftwareCategory();
+            $input["softwarecategories_id"]
+               = $softCat->importExternal($input["_from"]);
          }
       } else {
          $input["softwarecategories_id"] = 0;
