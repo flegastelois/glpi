@@ -135,6 +135,11 @@ class AuthLDAP extends CommonDBTM
         return static::canUpdate();
     }
 
+    public static function canDelete()
+    {
+        return static::canUpdate();
+    }
+
     public static function canPurge()
     {
         return static::canUpdate();
