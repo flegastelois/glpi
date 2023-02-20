@@ -42,7 +42,7 @@ use Glpi\Application\View\TemplateRenderer;
  *
  * Relation between Changes and Problems
  **/
-class Change_Problem extends CommonDBRelation
+class Change_Problem extends CommonITILObject_CommonITILObject
 {
    // From CommonDBRelation
     public static $itemtype_1   = 'Change';
@@ -50,16 +50,6 @@ class Change_Problem extends CommonDBRelation
 
     public static $itemtype_2   = 'Problem';
     public static $items_id_2   = 'problems_id';
-
-
-
-    public function getForbiddenStandardMassiveAction()
-    {
-
-        $forbidden   = parent::getForbiddenStandardMassiveAction();
-        $forbidden[] = 'update';
-        return $forbidden;
-    }
 
 
     public static function getTypeName($nb = 0)
@@ -331,23 +321,5 @@ class Change_Problem extends CommonDBRelation
             Html::closeForm();
         }
         echo "</div>";
-    }
-
-    public function post_addItem()
-    {
-        global $CFG_GLPI;
-
-        $donotif = !isset($this->input['_disablenotif']) && $CFG_GLPI["use_notifications"];
-
-        if ($donotif) {
-            $problem = new Problem();
-            $change  = new Change();
-            if ($problem->getFromDB($this->input["problems_id"]) && $change->getFromDB($this->input["changes_id"])) {
-                NotificationEvent::raiseEvent("update", $problem);
-                NotificationEvent::raiseEvent('update', $change);
-            }
-        }
-
-        parent::post_addItem();
     }
 }

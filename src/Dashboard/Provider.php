@@ -342,7 +342,7 @@ class Provider
                 ];
 
                 if ($params['validation_check_user']) {
-                    $where['glpi_ticketvalidations.users_id_validate'] = Session::getLoginUserID();
+                    $where[] = \TicketValidation::getTargetCriteriaForUser(Session::getLoginUserID());
                 }
 
                 $query_criteria = array_merge_recursive($query_criteria, [
@@ -354,7 +354,7 @@ class Provider
                             ]
                         ]
                     ],
-                    'WHERE' => $where,
+                    'WHERE' => $where
                 ]);
                 break;
 

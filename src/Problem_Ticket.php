@@ -35,7 +35,7 @@
 
 use Glpi\Application\View\TemplateRenderer;
 
-class Problem_Ticket extends CommonDBRelation
+class Problem_Ticket extends CommonITILObject_CommonITILObject
 {
    // From CommonDBRelation
     public static $itemtype_1   = 'Problem';
@@ -43,19 +43,6 @@ class Problem_Ticket extends CommonDBRelation
 
     public static $itemtype_2   = 'Ticket';
     public static $items_id_2   = 'tickets_id';
-
-
-    /**
-     * @since 0.84
-     **/
-    public function getForbiddenStandardMassiveAction()
-    {
-
-        $forbidden   = parent::getForbiddenStandardMassiveAction();
-        $forbidden[] = 'update';
-        return $forbidden;
-    }
-
 
     public static function getTypeName($nb = 0)
     {
@@ -104,49 +91,6 @@ class Problem_Ticket extends CommonDBRelation
                 break;
         }
         return true;
-    }
-
-
-    /**
-     * @since 0.84
-     **/
-    public function post_addItem()
-    {
-        global $CFG_GLPI;
-
-        $donotif = !isset($this->input['_disablenotif']) && $CFG_GLPI["use_notifications"];
-
-        if ($donotif) {
-            $problem = new Problem();
-            $ticket  = new Ticket();
-            if ($problem->getFromDB($this->input["problems_id"]) && $ticket->getFromDB($this->input["tickets_id"])) {
-                NotificationEvent::raiseEvent("update", $problem);
-                NotificationEvent::raiseEvent('update', $ticket);
-            }
-        }
-
-        parent::post_addItem();
-    }
-
-
-    /**
-     * @since 0.84
-     **/
-    public function post_deleteFromDB()
-    {
-        global $CFG_GLPI;
-
-        $donotif = !isset($this->input['_disablenotif']) && $CFG_GLPI["use_notifications"];
-
-        if ($donotif) {
-            $problem = new Problem();
-            if ($problem->getFromDB($this->fields["problems_id"])) {
-                $options = [];
-                NotificationEvent::raiseEvent("delete", $problem, $options);
-            }
-        }
-
-        parent::post_deleteFromDB();
     }
 
 

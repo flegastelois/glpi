@@ -509,6 +509,46 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
         }
     }
 
+    /**
+     * Add all users and groups who were asked for an approval answer
+     *
+     * @param array $options Options
+     * @return void
+     */
+    public function addValidationTarget($options = [])
+    {
+        global $DB;
+
+        if (isset($options['validation_id'])) {
+            $validation_type = $this->obj->getType() . 'Validation';
+            $validation = new $validation_type();
+            $validation->getFromDB($options['validation_id']);
+            if ($validation->fields['itemtype_target'] === 'User') {
+                $validationtable = getTableForItemType($this->obj->getType() . 'Validation');
+
+                $criteria = [
+                    'LEFT JOIN' => [
+                        User::getTable() => [
+                            'ON' => [
+                                $validationtable => 'items_id_target',
+                                User::getTable() => 'id'
+                            ]
+                        ]
+                    ]
+                ] + $this->getDistinctUserCriteria() + $this->getProfileJoinCriteria();
+                $criteria['FROM'] = $validationtable;
+                $criteria['WHERE']["$validationtable.id"] = $options['validation_id'];
+
+                $iterator = $DB->request($criteria);
+                foreach ($iterator as $data) {
+                    $this->addToRecipientsList($data);
+                }
+            } else if ($validation->fields['itemtype_target'] === 'Group') {
+                $this->addForGroup(0, $validation->fields['items_id_target']);
+            }
+        }
+    }
+
 
     /**
      * Add author related to the followup
@@ -855,6 +895,7 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
 
         if (($event == 'validation') || ($event == 'validation_answer')) {
             $this->addTarget(Notification::VALIDATION_REQUESTER, __('Approval requester'));
+            $this->addTarget(Notification::VALIDATION_TARGET, __('Approval target'));
             $this->addTarget(Notification::VALIDATION_APPROVER, __('Approver'));
         }
 
@@ -934,6 +975,10 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
 
                     case Notification::ASSIGN_GROUP:
                         $this->addLinkedGroupByType(CommonITILActor::ASSIGN);
+                        break;
+
+                    case Notification::VALIDATION_TARGET:
+                        $this->addValidationTarget($options);
                         break;
 
                //Send to the ITIL object validation approver
@@ -1327,6 +1372,44 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
 
        // Complex mode
         if (!$simple) {
+            $linked = CommonITILObject_CommonITILObject::getAllLinkedTo($item->getType(), $item->getField('id'));
+            $data['linkedtickets'] = [];
+            $data['linkedchanges'] = [];
+            $data['linkedproblems'] = [];
+
+            foreach ($linked as $link) {
+                $itemtype = $link['itemtype'];
+                $link_item = new $link['itemtype']();
+                if ($link_item->getFromDB($link['items_id'])) {
+                    $tmp = [];
+                    $tmp['##linked' . strtolower($itemtype) . '.id##'] = $link['items_id'];
+                    $tmp['##linked' . strtolower($itemtype) . '.link##'] = CommonITILObject_CommonITILObject::getLinkName($link['link']);
+                    $tmp['##linked' . strtolower($itemtype) . '.url##'] = $this->formatURL(
+                        $options['additionnaloption']['usertype'],
+                        strtolower($itemtype) . "_" . $link['items_id']
+                    );
+
+                    $tmp['##linked' . strtolower($itemtype) . '.title##'] = $link_item->getField('name');
+                    $tmp['##linked' . strtolower($itemtype) . '.content##'] = $link_item->getField('content');
+
+                    switch ($itemtype) {
+                        case 'Ticket':
+                            $data['linkedtickets'][] = $tmp;
+                            break;
+                        case 'Change':
+                            $data['linkedchanges'][] = $tmp;
+                            break;
+                        case 'Problem':
+                            $data['linkedproblems'][] = $tmp;
+                            break;
+                    }
+                }
+            }
+
+            $data['##ticket.numberoflinkedtickets##'] = count($data['linkedtickets']);
+            $data['##ticket.numberoflinkedchanges##'] = count($data['linkedchanges']);
+            $data['##ticket.numberoflinkedproblems##'] = count($data['linkedproblems']);
+
             $show_private = $options['additionnaloption']['show_private'] ?? false;
             $followup_restrict = [];
             $followup_restrict['items_id'] = $item->getField('id');
@@ -1579,17 +1662,17 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
 
             $data['timelineitems'] = [];
 
-            $options = [
-                'with_documents'    => false,
-                'with_logs'         => false,
-                'with_validations'  => false,
-                'expose_private'    => $show_private,
-                'bypass_rights'     => true,
-                'sort_by_date_desc' => true,
-                'is_self_service'   => $is_self_service,
-            ];
-
-            $timeline = $item->getTimelineItems($options);
+            $timeline = $item->getTimelineItems(
+                [
+                    'with_documents'    => false,
+                    'with_logs'         => false,
+                    'with_validations'  => false,
+                    'expose_private'    => $show_private,
+                    'bypass_rights'     => true,
+                    'sort_by_date_desc' => true,
+                    'is_self_service'   => $is_self_service,
+                ]
+            );
 
             foreach ($timeline as $timeline_data) {
                 $tmptimelineitem = [];
@@ -1619,6 +1702,39 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
                     $tmptimelineitem['##timelineitems.author##'] = '';
                 }
                 $data['timelineitems'][] = $tmptimelineitem;
+            }
+
+            /** @var CommonITILObject $item */
+            $inquest_type = $item::getSatisfactionClass();
+            if ($inquest_type !== null) {
+                $inquest = new $inquest_type();
+                $data['##satisfaction.type##'] = '';
+                $data['##satisfaction.datebegin##'] = '';
+                $data['##satisfaction.dateanswered##'] = '';
+                $data['##satisfaction.satisfaction##'] = '';
+                $data['##satisfaction.description##'] = '';
+
+                if ($inquest->getFromDB($item->getField('id'))) {
+                    // internal inquest
+                    if ($inquest->fields['type'] == 1) {
+                        $user_type = $options['additionnaloption']['usertype'];
+                        $redirect = "{$objettype}_" . $item->getField("id") . '_' . $item::getType() . '$3';
+                        $data["##{$objettype}.urlsatisfaction##"] = $this->formatURL($user_type, $redirect);
+                    } else if ($inquest->fields['type'] == 2) { // external inquest
+                        $data["##{$objettype}.urlsatisfaction##"] = Entity::generateLinkSatisfaction($item);
+                    }
+
+                    $data['##satisfaction.type##']
+                        = $inquest->getTypeInquestName($inquest->getfield('type'));
+                    $data['##satisfaction.datebegin##']
+                        = Html::convDateTime($inquest->fields['date_begin']);
+                    $data['##satisfaction.dateanswered##']
+                        = Html::convDateTime($inquest->fields['date_answered']);
+                    $data['##satisfaction.satisfaction##']
+                        = $inquest->fields['satisfaction'];
+                    $data['##satisfaction.description##']
+                        = $inquest->fields['comment'];
+                }
             }
         }
         return $data;
@@ -1951,6 +2067,9 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
             'timelineitems.typename'            => _n('Type', 'Types', 1),
             'timelineitems.description'         => __('Description'),
             'timelineitems.position'            => __('Position'),
+            $objettype . '.numberoflinkedtickets' => _x('quantity', 'Number of linked tickets'),
+            $objettype . '.numberoflinkedchanges' => _x('quantity', 'Number of linked changes'),
+            $objettype . '.numberoflinkedproblems' => _x('quantity', 'Number of linked problems'),
 
         ];
 
@@ -1970,7 +2089,10 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
             'authors'   => _n('Requester', 'Requesters', Session::getPluralNumber()),
             'suppliers' => _n('Supplier', 'Suppliers', Session::getPluralNumber()),
             'actors' => __('Actors'),
-            'timelineitems' => sprintf(__('Processing %1$s'), strtolower($objettype))
+            'timelineitems' => sprintf(__('Processing %1$s'), strtolower($objettype)),
+            'linkedtickets' => _n('Linked ticket', 'Linked tickets', Session::getPluralNumber()),
+            'linkedchanges' => _n('Linked change', 'Linked changes', Session::getPluralNumber()),
+            'linkedproblems' => _n('Linked problem', 'Linked problems', Session::getPluralNumber()),
         ];
 
         foreach ($tags as $tag => $label) {
@@ -1982,14 +2104,18 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
         }
 
        //Tags with just lang
-        $tags = [$objettype . '.days'               => _n('Day', 'Days', Session::getPluralNumber()),
-            $objettype . '.attribution'        => __('Assigned to'),
-            $objettype . '.entity'             => Entity::getTypeName(1),
-            $objettype . '.nocategoryassigned' => __('No defined category'),
-            $objettype . '.log'                => __('Historical'),
-            $objettype . '.tasks'              => _n('Task', 'Tasks', Session::getPluralNumber()),
-            $objettype . '.costs'              => _n('Cost', 'Costs', Session::getPluralNumber()),
-            $objettype . '.timelineitems'       => sprintf(__('Processing %1$s'), strtolower($objettype))
+        $tags = [
+            $objettype . '.days'                => _n('Day', 'Days', Session::getPluralNumber()),
+            $objettype . '.attribution'         => __('Assigned to'),
+            $objettype . '.entity'              => Entity::getTypeName(1),
+            $objettype . '.nocategoryassigned'  => __('No defined category'),
+            $objettype . '.log'                 => __('Historical'),
+            $objettype . '.tasks'               => _n('Task', 'Tasks', Session::getPluralNumber()),
+            $objettype . '.costs'               => _n('Cost', 'Costs', Session::getPluralNumber()),
+            $objettype . '.timelineitems'       => sprintf(__('Processing %1$s'), strtolower($objettype)),
+            $objettype . '.linkedtickets'       => _n('Linked ticket', 'Linked tickets', Session::getPluralNumber()),
+            $objettype . '.linkedchanges'       => _n('Linked change', 'Linked changes', Session::getPluralNumber()),
+            $objettype . '.linkedproblems'      => _n('Linked problem', 'Linked problems', Session::getPluralNumber()),
         ];
 
         foreach ($tags as $tag => $label) {
@@ -2076,7 +2202,82 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
                 __('%1$s: %2$s'),
                 Document::getTypeName(Session::getPluralNumber()),
                 __('URL')
-            )
+            ),
+            'linkedticket.id'         => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked ticket', 'Linked tickets', 1),
+                __('ID')
+            ),
+            'linkedticket.link'       => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked ticket', 'Linked tickets', 1),
+                Link::getTypeName(1)
+            ),
+            'linkedticket.url'        => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked ticket', 'Linked tickets', 1),
+                __('URL')
+            ),
+            'linkedticket.title'      => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked ticket', 'Linked tickets', 1),
+                __('Title')
+            ),
+            'linkedticket.content'    => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked ticket', 'Linked tickets', 1),
+                __('Description')
+            ),
+            'linkedchange.id'         => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked change', 'Linked changes', 1),
+                __('ID')
+            ),
+            'linkedchange.link'       => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked change', 'Linked changes', 1),
+                Link::getTypeName(1)
+            ),
+            'linkedchange.url'        => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked change', 'Linked changes', 1),
+                __('URL')
+            ),
+            'linkedchange.title'      => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked change', 'Linked changes', 1),
+                __('Title')
+            ),
+            'linkedchange.content'    => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked change', 'Linked changes', 1),
+                __('Description')
+            ),
+            'linkedproblem.id'         => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked problem', 'Linked problems', 1),
+                __('ID')
+            ),
+            'linkedproblem.link'       => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked problem', 'Linked problems', 1),
+                Link::getTypeName(1)
+            ),
+            'linkedproblem.url'        => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked problem', 'Linked problems', 1),
+                __('URL')
+            ),
+            'linkedproblem.title'      => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked problem', 'Linked problems', 1),
+                __('Title')
+            ),
+            'linkedproblem.content'    => sprintf(
+                __('%1$s: %2$s'),
+                _n('Linked problem', 'Linked problems', 1),
+                __('Description')
+            ),
         ];
 
         foreach ($tags as $tag => $label) {
@@ -2105,6 +2306,56 @@ abstract class NotificationTargetCommonITILObject extends NotificationTarget
                 'value'          => true,
                 'lang'           => false,
                 'allowed_values' => $label['allowed_values']
+            ]);
+        }
+
+        $inquest_type = $this->obj::getSatisfactionClass();
+        if ($inquest_type !== null) {
+            $tags = ['satisfaction.datebegin' => __('Creation date of the satisfaction survey'),
+                'satisfaction.dateanswered' => __('Response date to the satisfaction survey'),
+                'satisfaction.satisfaction' => __('Satisfaction'),
+                'satisfaction.description' => __('Comments to the satisfaction survey')
+            ];
+
+            foreach ($tags as $tag => $label) {
+                $this->addTagToList(['tag' => $tag,
+                    'label' => $label,
+                    'value' => true,
+                    'events' => ['satisfaction']
+                ]);
+            }
+
+            $tags = ['satisfaction.type' => __('Survey type'),];
+
+            foreach ($tags as $tag => $label) {
+                $this->addTagToList(['tag' => $tag,
+                    'label' => $label,
+                    'value' => true,
+                    'lang' => false,
+                    'events' => ['satisfaction']
+                ]);
+            }
+
+            $tags = ['satisfaction.text' => __('Invitation to fill out the survey')];
+
+            foreach ($tags as $tag => $label) {
+                $this->addTagToList(['tag' => $tag,
+                    'label' => $label,
+                    'value' => false,
+                    'lang' => true,
+                    'events' => ['satisfaction']
+                ]);
+            }
+
+            $this->addTagToList([
+                'tag' => $objettype . '.urlsatisfaction',
+                'label' => sprintf(
+                    __('%1$s: %2$s'),
+                    __('Satisfaction'),
+                    __('URL')
+                ),
+                'value' => true,
+                'lang' => false,
             ]);
         }
     }

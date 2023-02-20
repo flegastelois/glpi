@@ -98,6 +98,8 @@ abstract class CommonITILObject extends CommonDBTM
     const TIMELINE_ORDER_NATURAL = 'natural';
     const TIMELINE_ORDER_REVERSE = 'reverse';
 
+    const SURVEY           = 131072;
+
     abstract public static function getTaskClass();
 
     public function post_getFromDB()
@@ -422,8 +424,13 @@ abstract class CommonITILObject extends CommonDBTM
             $type = ($ID ? $this->fields['type'] : $options['type']);
         }
         // Load template if available
+        $predefined_template = 0;
+        $template_class = static::getTemplateClass();
+        if (class_exists($template_class) && (int) $ID > 0 && isset($this->fields[$template_class::getForeignKeyField()])) {
+            $predefined_template = $this->fields[$template_class::getForeignKeyField()];
+        }
         $tt = $this->getITILTemplateToUse(
-            $options['template_preview'] ?? 0,
+            $options['template_preview'] ?? $predefined_template,
             $type,
             ($ID ? $this->fields['itilcategories_id'] : $options['itilcategories_id']),
             ($ID ? $this->fields['entities_id'] : $options['entities_id'])
@@ -767,7 +774,7 @@ abstract class CommonITILObject extends CommonDBTM
             isset($_SESSION["glpigroups"])
             && $this->haveAGroup(CommonITILActor::ASSIGN, $_SESSION['glpigroups'])
          )
-         || $this->isValidator(Session::getLoginUserID())
+         || $this->isUserValidationRequested(Session::getLoginUserID(), true)
         );
     }
 
@@ -826,12 +833,41 @@ abstract class CommonITILObject extends CommonDBTM
     }
 
     /**
+     * Check if user validation is requested.
+     *
+     * @param int $users_id
+     *
+     * @return bool
+     */
+    final protected function isUserValidationRequested(int $users_id, bool $search_in_groups): bool
+    {
+        $validation = $this->getValidationClassInstance();
+        if ($validation === null) {
+            // Object cannot be validated
+            return false;
+        }
+
+        $validation_requests = $validation->find(
+            [
+                getForeignKeyFieldForItemType(static::class) => $this->getID(),
+                $validation->getTargetCriteriaForUser($users_id, $search_in_groups),
+            ]
+        );
+
+        return count($validation_requests) > 0;
+    }
+
+    /**
      * Check if the given users is a validator
      * @param int $users_id
      * @return bool
+     *
+     * @deprecated 10.1.0
      */
     public function isValidator($users_id): bool
     {
+        Toolbox::deprecated('"CommonITILObject::isValidator()" is deprecated. Use "CommonITILObject::isUserValidationRequested()" instead.');
+
         if (!$users_id) {
            // Invalid parameter
             return false;
@@ -1539,8 +1575,64 @@ abstract class CommonITILObject extends CommonDBTM
         return $input;
     }
 
+    protected function manageITILObjectLinkInput($input)
+    {
+        if (isset($input['_link'])) {
+            $link = $input['_link'];
+
+            if (isset($link['tickets_id_2'])) {
+                Toolbox::deprecated();
+                $link = [
+                    'itemtype_1' => Ticket::class,
+                    'items_id_1' => $link['tickets_id_1'] ?? 0,
+                    'itemtype_2' => Ticket::class,
+                    'items_id_2' => $link['tickets_id_2'],
+                    'link'       => $link['link'] ?? CommonITILObject_CommonITILObject::LINK_TO,
+                ];
+            }
+
+            if (!isset($link['itemtype_1'], $link['items_id_1'], $link['itemtype_2'], $link['items_id_2'], $link['link'])) {
+                // Not enough data, ignore link silently
+                return;
+            }
+
+            if ($link['itemtype_1'] == $this->getType() && $link['items_id_1'] == 0) {
+                // Link was added in creation form, ID was not available yet
+                $link['items_id_1'] = $this->getID();
+            }
+
+            if ((int) $link['items_id_1'] === 0 || (int) $link['items_id_2'] === 0) {
+                // Not enough data, ignore link silently
+                return;
+            }
+
+            $link_class = !empty($link['itemtype_1']) && !empty($link['itemtype_2'])
+                ? CommonITILObject_CommonITILObject::getLinkClass($link['itemtype_1'], $link['itemtype_2'])
+                : null;
+
+            if ($link_class === null) {
+                trigger_error(
+                    sprintf('Invalid itemtypes "%s"/"%s" on ITIL objects link.', $link['itemtype_1'], $link['itemtype_2']),
+                    E_USER_WARNING
+                );
+                return;
+            }
+
+            $itil_itil = new $link_class();
+
+            $link = $itil_itil->normalizeInput($link);
+
+            if ($itil_itil->can(-1, CREATE, $link) && $itil_itil->add($link)) {
+                $input['_forcenotif'] = true;
+            } else {
+                Session::addMessageAfterRedirect(__('Unknown ITIL Object'), false, ERROR);
+            }
+        }
+    }
+
     public function prepareInputForUpdate($input)
     {
+        $input = $this->handleInputDeprecations($input);
 
         if (!$this->checkFieldsConsistency($input)) {
             return false;
@@ -1549,12 +1641,24 @@ abstract class CommonITILObject extends CommonDBTM
        // Add document if needed
         $this->getFromDB($input["id"]); // entities_id field required
 
+        // Map unique template field to template foreign key
+        // Leave original field. The new field is stored in the DB, while the original is used for everything else (left for BC)
+        if (isset($input[static::getTemplateFormFieldName()]) && (int) $input[static::getTemplateFormFieldName()] > 0) {
+            $tpl_class = static::getTemplateClass();
+            $input[$tpl_class::getForeignKeyField()] = (int) $input[static::getTemplateFormFieldName()];
+        }
+
         if ($this->getType() !== Ticket::getType()) {
            //cannot be handled here for tickets. @see Ticket::prepareInputForUpdate()
             $input = $this->handleTemplateFields($input);
             if ($input === false) {
                 return false;
             }
+        }
+
+        $cat_id = $input['itilcategories_id'] ?? 0;
+        if ($cat_id) {
+            $input['itilcategories_id_code'] = ITILCategory::getById($cat_id)->fields['code'];
         }
 
         if (isset($input["document"]) && ($input["document"] > 0)) {
@@ -1894,6 +1998,8 @@ abstract class CommonITILObject extends CommonDBTM
 
     public function post_updateItem($history = 1)
     {
+        $this->handleItemsIdInput();
+
        // Handle "_tasktemplates_id" special input
         $this->handleTaskTemplateInput();
 
@@ -1911,6 +2017,8 @@ abstract class CommonITILObject extends CommonDBTM
 
         // Send validation requests
         $this->manageValidationAdd($this->input);
+
+        $this->manageITILObjectLinkInput($this->input);
 
         parent::post_updateItem();
     }
@@ -2345,11 +2453,20 @@ abstract class CommonITILObject extends CommonDBTM
     {
         global $CFG_GLPI;
 
+        $input = $this->handleInputDeprecations($input);
+
         if (!$this->checkFieldsConsistency($input)) {
             return false;
         }
 
         $input = $this->transformActorsInput($input);
+
+        // Map unique template field to template foreign key
+        // Leave original field. The new field is stored in the DB, while the original is used for everything else (left for BC)
+        if (isset($input[static::getTemplateFormFieldName()]) && (int) $input[static::getTemplateFormFieldName()] > 0) {
+            $tpl_class = static::getTemplateClass();
+            $input[$tpl_class::getForeignKeyField()] = (int) $input[static::getTemplateFormFieldName()];
+        }
 
        // save value before clean;
         $title = ltrim($input['name']);
@@ -2370,6 +2487,11 @@ abstract class CommonITILObject extends CommonDBTM
             || !($CFG_GLPI['impact_mask'] & (1 << $input["impact"]))
         ) {
             $input["impact"] = 3;
+        }
+
+        $cat_id = $input['itilcategories_id'] ?? 0;
+        if ($cat_id) {
+            $input['itilcategories_id_code'] = ITILCategory::getById($cat_id)->fields['code'];
         }
 
         $canpriority = true;
@@ -2489,9 +2611,10 @@ abstract class CommonITILObject extends CommonDBTM
 
                             if (
                                 ($key == '_add_validation')
-                                && !empty($input['users_id_validate'])
-                                && isset($input['users_id_validate'][0])
-                                && ($input['users_id_validate'][0] > 0)
+                                && !empty($input['_validation_targets'])
+                                && isset($input['_validation_targets'][0]['itemtype_target'], $input['_validation_targets'][0]['items_id_target'])
+                                && class_exists($input['_validation_targets'][0]['itemtype_target'])
+                                && ($input['_validation_targets'][0]['items_id_target'] > 0)
                             ) {
                                 unset($mandatory_missing['_add_validation']);
                             }
@@ -2544,6 +2667,33 @@ abstract class CommonITILObject extends CommonDBTM
                         }
                     }
                 }
+            }
+        }
+
+        return $input;
+    }
+
+    /**
+     * Handle input deprecations by transfering old supported input keys to new input keys.
+     *
+     * @param array $input
+     *
+     * @return array
+     */
+    private function handleInputDeprecations(array $input): array
+    {
+        if (array_key_exists('users_id_validate', $input)) {
+            Toolbox::deprecated('Usage of "users_id_validate" in input is deprecated. Use "_validation_targets" instead.');
+
+            if (!array_key_exists('_validation_targets', $input)) {
+                $input['_validation_targets'] = [];
+            }
+            $users_ids = !is_array($input['users_id_validate']) ? [$input['users_id_validate']] : $input['users_id_validate'];
+            foreach ($users_ids as $user_id) {
+                $input['_validation_targets'][] = [
+                    'itemtype_target' => User::class,
+                    'items_id_target' => $user_id,
+                ];
             }
         }
 
@@ -2620,6 +2770,8 @@ abstract class CommonITILObject extends CommonDBTM
     public function post_addItem()
     {
 
+        $this->handleItemsIdInput();
+
        // Handle "_tasktemplates_id" special input
         $this->handleTaskTemplateInput();
 
@@ -2653,6 +2805,8 @@ abstract class CommonITILObject extends CommonDBTM
 
         // Send validation requests
         $this->manageValidationAdd($this->input);
+
+        $this->manageITILObjectLinkInput($this->input);
 
         parent::post_addItem();
     }
@@ -3394,6 +3548,7 @@ abstract class CommonITILObject extends CommonDBTM
      *  - value    : default value (default self::INCOMING)
      *  - showtype : list proposed : normal, search or allowed (default normal)
      *  - display  : boolean if false get string
+     *  - use_template_limits: Integer ID of the template to use when considering the available statuses (false disables this limitation).
      *
      * @return string|integer Output string if display option is set to false,
      *                        otherwise random part of dropdown id
@@ -3402,11 +3557,12 @@ abstract class CommonITILObject extends CommonDBTM
     {
 
         $p = [
-            'name'              => 'status',
-            'showtype'          => 'normal',
-            'display'           => true,
-            'templateResult'    => "templateItilStatus",
-            'templateSelection' => "templateItilStatus",
+            'name'                  => 'status',
+            'showtype'              => 'normal',
+            'display'               => true,
+            'templateResult'        => "templateItilStatus",
+            'templateSelection'     => "templateItilStatus",
+            'use_template_limits'   => false,
         ];
 
         if (is_array($options) && count($options)) {
@@ -3415,7 +3571,7 @@ abstract class CommonITILObject extends CommonDBTM
             }
         }
 
-        if (!isset($p['value']) || empty($p['value'])) {
+        if (empty($p['values']) && (!isset($p['value']) || empty($p['value']))) {
             $p['value']     = self::INCOMING;
         }
 
@@ -3434,6 +3590,21 @@ abstract class CommonITILObject extends CommonDBTM
             default:
                 $tab = static::getAllStatusArray(false);
                 break;
+        }
+
+        if ($p['use_template_limits'] !== false && (int) $p['use_template_limits'] > 0) {
+            $template_class = static::getTemplateClass();
+            $template = new $template_class();
+            if ($template->getFromDB($p['use_template_limits'])) {
+                $allowed_statuses = $template->fields['allowed_statuses'];
+                // Allow current value if set
+                if (isset($p['value']) && !empty($p['value'])) {
+                    $allowed_statuses[] = $p['value'];
+                }
+                $tab = array_filter($tab, static function ($status) use ($allowed_statuses) {
+                    return in_array($status, $allowed_statuses, false);
+                }, ARRAY_FILTER_USE_KEY);
+            }
         }
 
         return Dropdown::showFromArray($p['name'], $tab, $p);
@@ -3565,6 +3736,29 @@ abstract class CommonITILObject extends CommonDBTM
         return parent::getSpecificValueToSelect($field, $name, $values, $options);
     }
 
+    public function getSpecificMassiveActions($checkitem = null)
+    {
+
+        $actions = [];
+
+        if (Session::getCurrentInterface() == 'central') {
+            $can_update_itilobject = Session::haveRight(Ticket::$rightname, UPDATE)
+                || Session::haveRight(Change::$rightname, UPDATE)
+                || Session::haveRight(Problem::$rightname, UPDATE);
+            if ($can_update_itilobject) {
+                $actions['CommonITILObject_CommonITILObject' . MassiveAction::CLASS_ACTION_SEPARATOR . 'add']
+                    = "<i class='fa-fw fas fa-link'></i>" .
+                    _x('button', 'Link ITIL Object');
+                $actions['CommonITILObject_CommonITILObject' . MassiveAction::CLASS_ACTION_SEPARATOR . 'delete']
+                    = "<i class='fa-fw fas fa-link'></i>" .
+                    _x('button', 'Unlink ITIL Object');
+            }
+        }
+
+        $actions += parent::getSpecificMassiveActions($checkitem);
+
+        return $actions;
+    }
 
     /**
      * @since 0.85
@@ -4062,6 +4256,17 @@ abstract class CommonITILObject extends CommonDBTM
                     ]
                 ]
             ]
+        ];
+
+        $tab[] = [
+            'id'                 => '401',
+            'table'              => $this->getTemplateClass()::getTable(),
+            'field'              => 'name',
+            'name'               => __('Template'),
+            'massiveaction'      => false,
+            'searchtype'         => ['equals', 'notequals'],
+            'datatype'           => 'dropdown',
+            'linkfield'          => $this->getTemplateClass()::getForeignKeyField(),
         ];
 
         return $tab;
@@ -6797,25 +7002,35 @@ abstract class CommonITILObject extends CommonDBTM
             $valitation_obj   = new $validation_class();
             $validations = $valitation_obj->find([$foreignKey => $this->getID()]);
             foreach ($validations as $validations_id => $validation) {
+                /** @var CommonITILValidation $valitation_obj */
+                $valitation_obj->getFromDB($validations_id);
                 $canedit = $valitation_obj->can($validations_id, UPDATE);
-                $cananswer = ($validation['users_id_validate'] === Session::getLoginUserID() &&
-                $validation['status'] == CommonITILValidation::WAITING);
-                $user = new User();
-                $user->getFromDB($validation['users_id_validate']);
-
+                $cananswer = $valitation_obj->isCurrentUserValidationTarget(true) && ((int) $validation['status'] === CommonITILValidation::WAITING);
                 $request_key = $valitation_obj::getType() . '_' . $validations_id
                     . (empty($validation['validation_date']) ? '' : '_request'); // If no answer, no suffix to see attached documents on request
+
+                $content = __('Validation request');
+                if (is_a($validation['itemtype_target'], CommonDBTM::class, true)) {
+                    $validation_target = new $validation['itemtype_target']();
+                    if ($validation_target->getFromDB($validation['items_id_target'])) {
+                        $content .= " <i class='ti ti-arrow-right'></i><i class='{$validation_target->getIcon()} text-muted me-1'></i>"
+                            . $validation_target->getlink();
+                    }
+                }
                 $timeline[$request_key] = [
                     'type' => $validation_class,
                     'item' => [
                         'id'        => $validations_id,
                         'date'      => $validation['submission_date'],
-                        'content'   => __('Validation request') . " <i class='ti ti-arrow-right'></i><i class='ti ti-user text-muted me-1'></i>" . $user->getlink(),
+                        'content'   => $content,
                         'comment_submission' => $validation['comment_submission'],
                         'users_id'  => $validation['users_id'],
                         'can_edit'  => $canedit,
                         'can_answer'   => $cananswer,
-                        'users_id_validate'  => $validation['users_id_validate'],
+                        'users_id_validate' => ((int) $validation['users_id_validate'] > 0)
+                            ? $validation['users_id_validate']
+                            // 'users_id_validate' will be set to current user id once answer will be submitted
+                            : ($cananswer ? Session::getLoginUserID() : 0),
                         'timeline_position' => $validation['timeline_position']
                     ],
                     'itiltype' => 'Validation',
@@ -6837,8 +7052,10 @@ abstract class CommonITILObject extends CommonDBTM
                             'comment_validation' => $validation['comment_validation'],
                             'users_id'  => $validation['users_id_validate'],
                             'status'    => "status_" . $validation['status'],
-                            'can_edit'  => $validation['users_id_validate'] === Session::getLoginUserID(),
+                            'can_edit'  => $canedit,
                             'timeline_position' => $validation['timeline_position'],
+                            'itemtype_target' => $validation['itemtype_target'],
+                            'items_id_target' => $validation['items_id_target']
                         ],
                         'class'    => 'validation-answer',
                         'itiltype' => 'Validation',
@@ -7500,6 +7717,8 @@ abstract class CommonITILObject extends CommonDBTM
         $excluded[] = '*:add_actor';
         $excluded[] = '*:add_task';
         $excluded[] = '*:add_followup';
+        $excluded[] = 'CommonITILObject_CommonITILObject:add';
+        $excluded[] = 'CommonITILObject_CommonITILObject:delete';
 
         return $excluded;
     }
@@ -7866,7 +8085,10 @@ abstract class CommonITILObject extends CommonDBTM
                                 ['is_manager' => 1]
                             );
                             foreach ($users as $data) {
-                                 $validations_to_send[] = $data['id'];
+                                $validations_to_send[] = [
+                                    'itemtype_target' => User::class,
+                                    'items_id_target' => $data['id'],
+                                ];
                             }
                         }
                         // Add to already set groups
@@ -7876,7 +8098,10 @@ abstract class CommonITILObject extends CommonDBTM
                                 ['is_manager' => 1]
                             );
                             foreach ($users as $data) {
-                                $validations_to_send[] = $data['id'];
+                                $validations_to_send[] = [
+                                    'itemtype_target' => User::class,
+                                    'items_id_target' => $data['id'],
+                                ];
                             }
                         }
                         break;
@@ -7891,7 +8116,10 @@ abstract class CommonITILObject extends CommonDBTM
                                 ['is_manager' => 1]
                             );
                             foreach ($users as $data) {
-                                $validations_to_send[] = $data['id'];
+                                $validations_to_send[] = [
+                                    'itemtype_target' => User::class,
+                                    'items_id_target' => $data['id'],
+                                ];
                             }
                         }
                         foreach ($this->getGroups(CommonITILActor::ASSIGN) as $d) {
@@ -7900,24 +8128,26 @@ abstract class CommonITILObject extends CommonDBTM
                                 ['is_manager' => 1]
                             );
                             foreach ($users as $data) {
-                                 $validations_to_send[] = $data['id'];
+                                $validations_to_send[] = [
+                                    'itemtype_target' => User::class,
+                                    'items_id_target' => $data['id'],
+                                ];
                             }
                         }
                         break;
 
                     case 'requester_responsible':
                         if (isset($input['_users_id_requester'])) {
-                            if (is_array($input['_users_id_requester'])) {
-                                foreach ($input['_users_id_requester'] as $users_id) {
-                                    $user = new User();
-                                    if ($user->getFromDB($users_id)) {
-                                          $validations_to_send[] = $user->getField('users_id_supervisor');
-                                    }
-                                }
-                            } else {
+                            $requesters = is_array($input['_users_id_requester'])
+                                ? $input['_users_id_requester']
+                                : [$input['_users_id_requester']];
+                            foreach ($requesters as $users_id) {
                                 $user = new User();
-                                if ($user->getFromDB($input['_users_id_requester'])) {
-                                     $validations_to_send[] = $user->getField('users_id_supervisor');
+                                if ($user->getFromDB($users_id)) {
+                                    $validations_to_send[] = [
+                                        'itemtype_target' => User::class,
+                                        'items_id_target' => $user->fields['users_id_supervisor'],
+                                    ];
                                 }
                             }
                         }
@@ -7942,34 +8172,51 @@ abstract class CommonITILObject extends CommonDBTM
                                 $data_users = $validation->getGroupUserHaveRights($opt);
 
                                 foreach ($data_users as $user) {
-                                    $validations_to_send[] = $user['id'];
+                                    $validations_to_send[] = [
+                                        'itemtype_target' => User::class,
+                                        'items_id_target' => $user['id'],
+                                    ];
                                 }
                             }
-                        } else {
-                            $validations_to_send[] = $value;
+                        } else if ($key === 'group_any') {
+                            foreach ($value as $groups_id) {
+                                $validations_to_send[] = [
+                                    'itemtype_target' => Group::class,
+                                    'items_id_target' => $groups_id,
+                                ];
+                            }
+                        } else if ((int) $value > 0) {
+                            $validations_to_send[] = [
+                                'itemtype_target' => User::class,
+                                'items_id_target' => $value,
+                            ];
                         }
                 }
             }
 
             // Validation user added on ticket form
-            if (isset($input['users_id_validate'])) {
-                if (array_key_exists('groups_id', $input['users_id_validate'])) {
-                    foreach ($input['users_id_validate'] as $key => $validation_to_add) {
-                        if (is_numeric($key)) {
-                            $validations_to_send[] = $validation_to_add;
-                        }
+            if (array_key_exists('_validation_targets', $input)) {
+                foreach ($input['_validation_targets'] as $validation_target) {
+                    if (
+                        !array_key_exists('itemtype_target', $validation_target)
+                        || !array_key_exists('items_id_target', $validation_target)
+                    ) {
+                        continue; // User may have not selected both fields
                     }
-                } else {
-                    foreach ($input['users_id_validate'] as $key => $validation_to_add) {
-                        if (is_numeric($key)) {
-                             $validations_to_send[] = $validation_to_add;
-                        }
+                    if (!is_array($validation_target['items_id_target'])) {
+                        $validation_target['items_id_target'] = [$validation_target['items_id_target']];
+                    }
+                    foreach ($validation_target['items_id_target'] as $items_id_target) {
+                        $validations_to_send[] = [
+                            'itemtype_target' => $validation_target['itemtype_target'],
+                            'items_id_target' => $items_id_target,
+                        ];
                     }
                 }
             }
 
             // Keep only one
-            $validations_to_send = array_unique($validations_to_send);
+            $validations_to_send = array_unique($validations_to_send, SORT_REGULAR);
 
             if (count($validations_to_send)) {
                 $values            = [];
@@ -7995,13 +8242,18 @@ abstract class CommonITILObject extends CommonDBTM
                     || $validation->can(-1, CREATE, $values)
                 ) { // cron or allowed user
                     $add_done = false;
-                    foreach ($validations_to_send as $user) {
+                    foreach ($validations_to_send as $validation_to_send) {
                         // Do not auto add twice same validation
-                        if (!$validation->alreadyExists($values[$self_fk], $user)) {
-                            $values["users_id_validate"] = $user;
-                            if ($validation->add($values)) {
-                                $add_done = true;
-                            }
+                        if (
+                            $validation_to_send['itemtype_target'] === User::class
+                            && $this->isUserValidationRequested($validation_to_send['items_id_target'], false)
+                        ) {
+                            continue;
+                        }
+                        $values['itemtype_target'] = $validation_to_send['itemtype_target'];
+                        $values['items_id_target'] = $validation_to_send['items_id_target'];
+                        if ($validation->add($values)) {
+                            $add_done = true;
                         }
                     }
                     if ($add_done) {
@@ -8620,53 +8872,10 @@ abstract class CommonITILObject extends CommonDBTM
             $data['_itemtype'] = static::class;
             $data['_team'] = $team;
             if (static::class === Ticket::class) {
-                $ticket_table = Ticket::getTable();
-                $tt_table = Ticket_Ticket::getTable();
                 $links = [];
-                $link_iterator = $DB->request([
-                    'FROM'   => new \QueryUnion([
-                        [
-                            'SELECT' => [
-                                new QueryExpression($DB->quoteName('tickets_id_1') . ' AS ' . $DB->quoteName('tickets_id')),
-                                'status'
-                            ],
-                            'FROM'   => $tt_table,
-                            'LEFT JOIN' => [
-                                $ticket_table => [
-                                    'ON'  => [
-                                        $ticket_table  => 'id',
-                                        $tt_table      => 'tickets_id_1'
-                                    ]
-                                ]
-                            ],
-                            'WHERE'  => [
-                                'tickets_id_1' => $data['id'],
-                                'link' => Ticket_Ticket::PARENT_OF
-                            ]
-                        ],
-                        [
-                            'SELECT' => [
-                                new QueryExpression($DB->quoteName('tickets_id_2') . ' AS ' . $DB->quoteName('tickets_id')),
-                                'status'
-                            ],
-                            'FROM'   => $tt_table,
-                            'LEFT JOIN' => [
-                                $ticket_table => [
-                                    'ON'  => [
-                                        $ticket_table  => 'id',
-                                        $tt_table      => 'tickets_id_2'
-                                    ]
-                                ]
-                            ],
-                            'WHERE'  => [
-                                'tickets_id_2' => $data['id'],
-                                'link' => Ticket_Ticket::SON_OF
-                            ]
-                        ]
-                    ])
-                ]);
-                foreach ($link_iterator as $link_data) {
-                     $links[$link_data['tickets_id']] = $link_data;
+                $links_temp = Ticket_Ticket::getLinkedTo('Ticket', $data['id']);
+                foreach ($links_temp as $link_data) {
+                    $links[$link_data['items_id']] = $link_data;
                 }
                 if ($links) {
                     if (count($links)) {
@@ -9346,5 +9555,373 @@ abstract class CommonITILObject extends CommonDBTM
     {
         unset($input['actiontime']);
         return $input;
+    }
+
+    /**
+     * Count number of open children having same type as current item.
+     *
+     * @return integer
+     */
+    public function countOpenChildrenOfSameType()
+    {
+        $itemtype = $this->getType();
+        $link_class = CommonITILObject_CommonITILObject::getLinkClass($itemtype, $itemtype);
+
+        if ($link_class === null || $this->isNewItem()) {
+            return 0;
+        }
+
+        $not_open_statuses = array_merge(
+            static::getSolvedStatusArray(),
+            static::getClosedStatusArray()
+        );
+        $open_statuses = array_diff(
+            array_keys(static::getAllStatusArray()),
+            $not_open_statuses
+        );
+
+        return $link_class::countLinksByStatus(
+            $this->getType(),
+            $this->getID(),
+            $open_statuses,
+            [CommonITILObject_CommonITILObject::SON_OF]
+        );
+    }
+
+    /**
+     * @param $output
+     **/
+    public static function showPreviewAssignAction($output)
+    {
+        //If ticket is assign to an object, display this information first
+        if (isset($output["entities_id"], $output["items_id"], $output["itemtype"])) {
+            if ($item = getItemForItemtype($output["itemtype"])) {
+                if ($item->getFromDB($output["items_id"])) {
+                    echo "<tr class='tab_bg_2'>";
+                    echo "<td>" . __('Assign equipment') . "</td>";
+
+                    echo "<td>" . $item->getLink(['comments' => true]) . "</td>";
+                    echo "</tr>";
+                }
+            }
+
+            unset($output["items_id"], $output["itemtype"]);
+        }
+        unset($output["entities_id"]);
+        return $output;
+    }
+
+    /**
+     * Fill input with values related to business rules.
+     *
+     * @param array $input
+     *
+     * @return void
+     */
+    final protected function fillInputForBusinessRules(array &$input)
+    {
+        global $DB;
+
+        $entities_id = isset($input['entities_id'])
+            ? $input['entities_id']
+            : $this->fields['entities_id'];
+
+        // If creation date is not set, then we're called during ticket creation
+        $creation_date = !empty($this->fields['date_creation'])
+            ? strtotime($this->fields['date_creation'])
+            : time();
+
+        // add calendars matching date creation (for business rules)
+        $calendars = [];
+        $ite_calendar = $DB->request([
+            'SELECT' => ['id'],
+            'FROM'   => Calendar::getTable(),
+            'WHERE'  => getEntitiesRestrictCriteria('', '', $entities_id, true)
+        ]);
+        foreach ($ite_calendar as $calendar_data) {
+            $calendar = new Calendar();
+            $calendar->getFromDB($calendar_data['id']);
+            if ($calendar->isAWorkingHour($creation_date)) {
+                $calendars[] = $calendar_data['id'];
+            }
+        }
+        if (count($calendars)) {
+            $input['_date_creation_calendars_id'] = $calendars;
+        }
+
+        $user = new User();
+        if (isset($input["_users_id_requester"])) {
+            if (
+                !is_array($input["_users_id_requester"])
+                && $user->getFromDB($input["_users_id_requester"])
+            ) {
+                $input['_locations_id_of_requester'] = $user->fields['locations_id'];
+                $input['users_default_groups'] = $user->fields['groups_id'];
+            } else if (is_array($input["_users_id_requester"]) && ($user_id = reset($input["_users_id_requester"])) !== false) {
+                if ($user->getFromDB($user_id)) {
+                    $input['_locations_id_of_requester'] = $user->fields['locations_id'];
+                    $input['users_default_groups'] = $user->fields['groups_id'];
+                }
+            }
+        }
+
+        // Clean new lines before passing to rules
+        if (isset($input["content"])) {
+            $input["content"] = preg_replace('/\\\\r\\\\n/', "\\n", $input['content']);
+            $input["content"] = preg_replace('/\\\\n/', "\\n", $input['content']);
+        }
+    }
+
+    public static function cronInfo($name)
+    {
+        switch ($name) {
+            case 'createinquest':
+                return ['description' => __('Generation of satisfaction surveys')];
+        }
+        return [];
+    }
+
+    /**
+     * Cron for automatically creating surveys for ITIL Objects
+     *
+     * @param CronTask $task
+     *
+     * @return integer (0 : nothing done - 1 : done)
+     **/
+    public static function cronCreateInquest($task)
+    {
+        global $DB;
+
+        $inquest_class = static::getType() . 'Satisfaction';
+
+        if (!class_exists($inquest_class)) {
+            return 0;
+        }
+
+        $conf        = new Entity();
+        /** @var CommonITILSatisfaction $inquest */
+        $inquest     = new $inquest_class();
+        $tot         = 0;
+        $maxentity   = [];
+        $tabentities = [];
+
+        // Get suffix for entity config fields. For backwards compatibility, ticket values have no suffix.
+        $config_suffix = static::getType() === 'Ticket' ? '' : ('_' . strtolower(static::getType()));
+
+        $rate = Entity::getUsedConfig('inquest_config' . $config_suffix, 0, 'inquest_rate' . $config_suffix);
+        if ($rate > 0) {
+            $tabentities[0] = $rate;
+        }
+
+        foreach ($DB->request('glpi_entities') as $entity) {
+            $rate   = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity['id'], 'inquest_rate' . $config_suffix);
+            $parent = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity['id'], 'entities_id');
+
+            if ($rate > 0) {
+                $tabentities[$entity['id']] = $rate;
+            }
+        }
+
+        foreach ($tabentities as $entity => $rate) {
+            $parent        = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity, 'entities_id');
+            $delay         = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity, 'inquest_delay' . $config_suffix);
+            $duration      = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity, 'inquest_duration' . $config_suffix);
+            $type          = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity);
+            $max_closedate = Entity::getUsedConfig('inquest_config' . $config_suffix, $entity, 'max_closedate' . $config_suffix);
+
+            $table = static::getTable();
+            $survey_table = $inquest::getTable();
+            $fk = static::getForeignKeyField();
+
+            $iterator = $DB->request([
+                'SELECT'    => [
+                    "$table.id",
+                    "$table.closedate",
+                    "$table.entities_id"
+                ],
+                'FROM'      => $table,
+                'LEFT JOIN' => [
+                    $survey_table => [
+                        'ON' => [
+                            $survey_table   => $fk,
+                            $table          => 'id'
+                        ]
+                    ],
+                    'glpi_entities'            => [
+                        'ON' => [
+                            $table          => 'entities_id',
+                            'glpi_entities' => 'id'
+                        ]
+                    ]
+                ],
+                'WHERE'     => [
+                    "$table.entities_id"          => $entity,
+                    "$table.is_deleted"           => 0,
+                    "$table.status"               => self::CLOSED,
+                    "$table.closedate"            => ['>', $max_closedate],
+                    new QueryExpression("ADDDATE(" . $DB->quoteName("$table.closedate") . ", INTERVAL $delay DAY) <= NOW()"),
+                    new QueryExpression("ADDDATE(" . $DB->quoteName("glpi_entities.max_closedate" . $config_suffix) . ", INTERVAL $duration DAY) <= NOW()"),
+                    "$survey_table.id" => null
+                ],
+                'ORDERBY'   => 'closedate ASC'
+            ]);
+
+            $nb            = 0;
+            $max_closedate = '';
+
+            foreach ($iterator as $itil_item) {
+                $max_closedate = $itil_item['closedate'];
+                if (mt_rand(1, 100) <= $rate) {
+                    if (
+                        $inquest->add([
+                            $fk             => $itil_item['id'],
+                            'date_begin'    => $_SESSION["glpi_currenttime"],
+                            'entities_id'   => $itil_item['entities_id'],
+                            'type'          => $type
+                        ])
+                    ) {
+                        $nb++;
+                    }
+                }
+            }
+
+            // keep all max_closedate of child entities
+            if (
+                !empty($max_closedate)
+                && (!isset($maxentity[$parent])
+                    || ($max_closedate > $maxentity[$parent]))
+            ) {
+                $maxentity[$parent] = $max_closedate;
+            }
+
+            if ($nb) {
+                $tot += $nb;
+                $task->addVolume($nb);
+                $task->log(sprintf(
+                    __('%1$s: %2$s'),
+                    Dropdown::getDropdownName('glpi_entities', $entity),
+                    $nb
+                ));
+            }
+        }
+
+        // Save the max_closedate so as not to test the same items twice
+        foreach ($maxentity as $parent => $maxdate) {
+            $conf->getFromDB($parent);
+            $conf->update([
+                'id'            => $conf->fields['id'],
+                //'entities_id'   => $parent,
+                'max_closedate' . $config_suffix => $maxdate
+            ]);
+        }
+
+        return ($tot > 0 ? 1 : 0);
+    }
+
+    /**
+     * Returns the {@link CommonITILSatisfaction} class for the current itemtype
+     * @return class-string<CommonITILSatisfaction>|null
+     */
+    public static function getSatisfactionClass(): ?string
+    {
+        $classname = static::class . 'Satisfaction';
+        return class_exists($classname) ? $classname : null;
+    }
+
+    /**
+     * Displays the current satisfaction survey for the given item or a message stating there is no survey.
+     *
+     * @param CommonITILObject $item The ITIL Object
+     * @return void
+     * @since 10.1.0
+     */
+    final protected static function showSatisfactionTabContent(CommonITILObject $item): void
+    {
+        $satisfaction_class = static::getSatisfactionClass();
+
+        if ($satisfaction_class === null) {
+            return;
+        }
+
+        /** @var CommonITILSatisfaction $satisfaction */
+        $satisfaction = new $satisfaction_class();
+        if (
+            in_array($item->fields['status'], static::getClosedStatusArray())
+            && $satisfaction->getFromDB($item->getID())
+        ) {
+            // Get suffix for entity config fields. For backwards compatibility, ticket values have no suffix.
+            $config_suffix = static::getType() === 'Ticket' ? '' : ('_' . strtolower(static::getType()));
+
+            $duration = (int) Entity::getUsedConfig('inquest_duration' . $config_suffix, $item->fields['entities_id']);
+            $date2    = strtotime($satisfaction->fields['date_begin']);
+            if (
+                ($duration === 0)
+                || (time() - $date2) <= $duration * DAY_TIMESTAMP
+            ) {
+                $satisfaction->showSatisactionForm($item);
+            } else {
+                echo "<p class='center b'>" . __('Satisfaction survey expired') . "</p>";
+            }
+        } else {
+            echo "<p class='center b'>" . __('No generated survey') . "</p>";
+        }
+    }
+
+    /**
+     * Handle the potential creation of a satisfaction survey for the current item when the item is updated.
+     *
+     * Must be called from {@link static::post_updateItem()}
+     *
+     * @return void
+     * @since 10.1.0
+     */
+    final protected function handleSatisfactionSurveyOnUpdate(): void
+    {
+        $satisfaction_class = $this->getSatisfactionClass();
+
+        if ($satisfaction_class === null) {
+            return;
+        }
+
+        /** @var CommonITILSatisfaction $satisfaction */
+        $satisfaction = new $satisfaction_class();
+
+        // Get suffix for entity config fields. For backwards compatibility, ticket values have no suffix.
+        $config_suffix = $this->getType() === 'Ticket' ? '' : ('_' . strtolower($this->getType()));
+        $rate          = Entity::getUsedConfig(
+            'inquest_config' . $config_suffix,
+            $this->fields['entities_id'],
+            'inquest_rate' . $config_suffix
+        );
+        $delay         = Entity::getUsedConfig(
+            'inquest_config' . $config_suffix,
+            $this->fields['entities_id'],
+            'inquest_delay' . $config_suffix
+        );
+        $type          = Entity::getUsedConfig('inquest_config' . $config_suffix, $this->fields['entities_id']);
+        $max_closedate = $this->fields['closedate'];
+
+        if (
+            in_array("status", $this->updates)
+            && in_array($this->input["status"], $this->getClosedStatusArray())
+            && ($delay == 0)
+            && ($rate > 0)
+            && (mt_rand(1, 100) <= $rate)
+        ) {
+            $fkey = $this->getForeignKeyField();
+
+            // For reopened ITIL object
+            $satisfaction->delete([$fkey => $this->fields['id']]);
+
+            $satisfaction->add(
+                [
+                    $fkey           => $this->fields['id'],
+                    'date_begin'    => $_SESSION["glpi_currenttime"],
+                    'entities_id'   => $this->fields['entities_id'],
+                    'type'          => $type,
+                    'max_closedate' => $max_closedate,
+                ]
+            );
+        }
     }
 }

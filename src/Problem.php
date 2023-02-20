@@ -215,8 +215,6 @@ class Problem extends CommonITILObject
         if ($this->hasImpactTab()) {
             $this->addStandardTab('Impact', $ong, $options);
         }
-        $this->addStandardTab('Change_Problem', $ong, $options);
-        $this->addStandardTab('Problem_Ticket', $ong, $options);
         $this->addStandardTab('Notepad', $ong, $options);
         $this->addStandardTab('KnowbaseItem_Item', $ong, $options);
         $this->addStandardTab('Log', $ong, $options);
@@ -234,13 +232,14 @@ class Problem extends CommonITILObject
         $this->deleteChildrenAndRelationsFromDb(
             [
                 Change_Problem::class,
-            // Done by parent: Group_Problem::class,
+                // Done by parent: Group_Problem::class,
                 Item_Problem::class,
-            // Done by parent: ITILSolution::class,
-            // Done by parent: Problem_Supplier::class,
+                // Done by parent: ITILSolution::class,
+                // Done by parent: Problem_Supplier::class,
                 Problem_Ticket::class,
-            // Done by parent: Problem_User::class,
+                // Done by parent: Problem_User::class,
                 ProblemCost::class,
+                Problem_Problem::class,
             ]
         );
 
@@ -384,8 +383,6 @@ class Problem extends CommonITILObject
                 '_disablenotif' => true
             ]);
         }
-
-        $this->handleItemsIdInput();
     }
 
     /**
@@ -555,6 +552,7 @@ class Problem extends CommonITILObject
             'name'               => __('Problems')
         ];
 
+        //FIXME: Fix the search options for linked ITIL objects
         $tab[] = [
             'id'                 => '200',
             'table'              => 'glpi_problems_tickets',
@@ -1536,7 +1534,7 @@ class Problem extends CommonITILObject
             'itilcategories_id'          => 0,
             'actiontime'                 => 0,
             '_add_validation'            => 0,
-            'users_id_validate'          => [],
+            '_validation_targets'        => [],
             '_tasktemplates_id'          => [],
             'items_id'                   => 0,
             '_actors'                     => [],

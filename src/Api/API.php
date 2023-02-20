@@ -2590,6 +2590,7 @@ abstract class API
                 $hclasses[] = "TicketCost";
                 $hclasses[] = "Problem_Ticket";
                 $hclasses[] = "Change_Ticket";
+                $hclasses[] = 'Ticket_Ticket';
                 $hclasses[] = "Item_Ticket";
                 $hclasses[] = "ITILSolution";
                 $hclasses[] = "ITILFollowup";
@@ -2603,6 +2604,7 @@ abstract class API
                 $hclasses[] = "ProblemCost";
                 $hclasses[] = "Change_Problem";
                 $hclasses[] = "Problem_Ticket";
+                $hclasses[] = 'Problem_Problem';
                 $hclasses[] = "Item_Problem";
                 $hclasses[] = "ITILSolution";
                 $hclasses[] = "ITILFollowup";
@@ -2617,6 +2619,7 @@ abstract class API
                 $hclasses[] = "Itil_Project";
                 $hclasses[] = "Change_Problem";
                 $hclasses[] = "Change_Ticket";
+                $hclasses[] = 'Change_Change';
                 $hclasses[] = "Change_Item";
                 $hclasses[] = "ITILSolution";
                 $hclasses[] = "ITILFollowup";

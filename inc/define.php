@@ -409,6 +409,7 @@ $CFG_GLPI["rulecollections_types"]        = [
     'RuleRightCollection',
     'RuleSoftwareCategoryCollection',
     'RuleTicketCollection',
+    'RuleChangeCollection',
                                                   //'RuleImportComputerCollection', //deprecated
     'RuleAssetCollection'
 ];
@@ -536,6 +537,8 @@ $CFG_GLPI['databaseinstance_types'] = ['Computer'];
 
 $CFG_GLPI['agent_types'] = ['Computer', 'Phone'];
 
+$CFG_GLPI['itil_types'] = ['Ticket', 'Change', 'Problem'];
+
 $reservations_libs = ['fullcalendar', 'reservations'];
 
 $CFG_GLPI['javascript'] = [
@@ -561,7 +564,7 @@ $CFG_GLPI['javascript'] = [
         'planning'  => ['clipboard', 'fullcalendar', 'tinymce', 'planning'],
         'ticket'    => ['rateit', 'tinymce', 'kanban', 'dashboard'],
         'problem'   => ['tinymce', 'kanban', 'sortable'],
-        'change'    => ['tinymce', 'kanban', 'sortable'],
+        'change'    => ['tinymce', 'kanban', 'sortable', 'rateit'],
         'stat'      => ['charts']
     ],
     'tools'     => [

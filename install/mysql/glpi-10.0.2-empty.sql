@@ -674,6 +674,7 @@ CREATE TABLE `glpi_changes` (
   `close_delay_stat` int NOT NULL DEFAULT '0',
   `solve_delay_stat` int NOT NULL DEFAULT '0',
   `date_creation` timestamp NULL DEFAULT NULL,
+  `changetemplates_id` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   KEY `name` (`name`),
   KEY `entities_id` (`entities_id`),
@@ -692,7 +693,8 @@ CREATE TABLE `glpi_changes` (
   KEY `time_to_resolve` (`time_to_resolve`),
   KEY `global_validation` (`global_validation`),
   KEY `users_id_lastupdater` (`users_id_lastupdater`),
-  KEY `date_creation` (`date_creation`)
+  KEY `date_creation` (`date_creation`),
+  KEY `changetemplates_id` (`changetemplates_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 
@@ -731,6 +733,7 @@ CREATE TABLE `glpi_changes_problems` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `changes_id` int unsigned NOT NULL DEFAULT '0',
   `problems_id` int unsigned NOT NULL DEFAULT '0',
+  `link` int NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `unicity` (`changes_id`,`problems_id`),
   KEY `problems_id` (`problems_id`)
@@ -760,6 +763,7 @@ CREATE TABLE `glpi_changes_tickets` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `changes_id` int unsigned NOT NULL DEFAULT '0',
   `tickets_id` int unsigned NOT NULL DEFAULT '0',
+  `link` int NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `unicity` (`changes_id`,`tickets_id`),
   KEY `tickets_id` (`tickets_id`)
@@ -834,6 +838,8 @@ CREATE TABLE `glpi_changevalidations` (
   `users_id` int unsigned NOT NULL DEFAULT '0',
   `changes_id` int unsigned NOT NULL DEFAULT '0',
   `users_id_validate` int unsigned NOT NULL DEFAULT '0',
+  `itemtype_target` varchar(255) NOT NULL,
+  `items_id_target` int unsigned NOT NULL DEFAULT '0',
   `comment_submission` text,
   `comment_validation` text,
   `status` int NOT NULL DEFAULT '2',
@@ -845,6 +851,7 @@ CREATE TABLE `glpi_changevalidations` (
   KEY `is_recursive` (`is_recursive`),
   KEY `users_id` (`users_id`),
   KEY `users_id_validate` (`users_id_validate`),
+  KEY `item_target` (`itemtype_target`,`items_id_target`),
   KEY `changes_id` (`changes_id`),
   KEY `submission_date` (`submission_date`),
   KEY `validation_date` (`validation_date`),
@@ -2742,6 +2749,17 @@ CREATE TABLE `glpi_entities` (
   `inquest_rate` int NOT NULL DEFAULT '0',
   `inquest_delay` int NOT NULL DEFAULT '-10',
   `inquest_URL` varchar(255) DEFAULT NULL,
+  `inquest_max_rate` int NOT NULL DEFAULT '5',
+  `inquest_default_rate` int NOT NULL DEFAULT '3',
+  `inquest_mandatory_comment` int NOT NULL DEFAULT '0',
+  `max_closedate_change` timestamp NULL DEFAULT NULL,
+  `inquest_config_change` int NOT NULL DEFAULT '-2',
+  `inquest_rate_change` int NOT NULL DEFAULT '0',
+  `inquest_delay_change` int NOT NULL DEFAULT '-10',
+  `inquest_URL_change` varchar(255) DEFAULT NULL,
+  `inquest_max_rate_change` int NOT NULL DEFAULT '5',
+  `inquest_default_rate_change` int NOT NULL DEFAULT '3',
+  `inquest_mandatory_comment_change` int NOT NULL DEFAULT '0',
   `autofill_warranty_date` varchar(255) NOT NULL DEFAULT '-2',
   `autofill_use_date` varchar(255) NOT NULL DEFAULT '-2',
   `autofill_buy_date` varchar(255) NOT NULL DEFAULT '-2',
@@ -2762,6 +2780,7 @@ CREATE TABLE `glpi_entities` (
   `delay_send_emails` int NOT NULL DEFAULT '-2',
   `is_notif_enable_default` int NOT NULL DEFAULT '-2',
   `inquest_duration` int NOT NULL DEFAULT '0',
+  `inquest_duration_change` int NOT NULL DEFAULT '0',
   `date_mod` timestamp NULL DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
   `autofill_decommission_date` varchar(255) NOT NULL DEFAULT '-2',
@@ -5526,6 +5545,7 @@ CREATE TABLE `glpi_problems` (
   `close_delay_stat` int NOT NULL DEFAULT '0',
   `solve_delay_stat` int NOT NULL DEFAULT '0',
   `date_creation` timestamp NULL DEFAULT NULL,
+  `problemtemplates_id` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   KEY `name` (`name`),
   KEY `entities_id` (`entities_id`),
@@ -5543,7 +5563,8 @@ CREATE TABLE `glpi_problems` (
   KEY `impact` (`impact`),
   KEY `time_to_resolve` (`time_to_resolve`),
   KEY `users_id_lastupdater` (`users_id_lastupdater`),
-  KEY `date_creation` (`date_creation`)
+  KEY `date_creation` (`date_creation`),
+  KEY `problemtemplates_id` (`problemtemplates_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 
@@ -5570,6 +5591,7 @@ CREATE TABLE `glpi_problems_tickets` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `problems_id` int unsigned NOT NULL DEFAULT '0',
   `tickets_id` int unsigned NOT NULL DEFAULT '0',
+  `link` int NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `unicity` (`problems_id`,`tickets_id`),
   KEY `tickets_id` (`tickets_id`)
@@ -7134,6 +7156,7 @@ CREATE TABLE `glpi_tickets` (
   `locations_id` int unsigned NOT NULL DEFAULT '0',
   `validation_percent` int NOT NULL DEFAULT '0',
   `date_creation` timestamp NULL DEFAULT NULL,
+  `tickettemplates_id` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   KEY `date` (`date`),
   KEY `closedate` (`closedate`),
@@ -7164,7 +7187,8 @@ CREATE TABLE `glpi_tickets` (
   KEY `locations_id` (`locations_id`),
   KEY `date_creation` (`date_creation`),
   KEY `ola_waiting_duration` (`ola_waiting_duration`),
-  KEY `olalevels_id_ttr` (`olalevels_id_ttr`)
+  KEY `olalevels_id_ttr` (`olalevels_id_ttr`),
+  KEY `tickettemplates_id` (`tickettemplates_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 
@@ -7374,6 +7398,7 @@ CREATE TABLE `glpi_tickettemplates` (
   `entities_id` int unsigned NOT NULL DEFAULT '0',
   `is_recursive` tinyint NOT NULL DEFAULT '0',
   `comment` text,
+  `allowed_statuses` varchar(255) NOT NULL DEFAULT '[1,2,3,4,5,6]',
   PRIMARY KEY (`id`),
   KEY `name` (`name`),
   KEY `entities_id` (`entities_id`),
@@ -7390,6 +7415,7 @@ CREATE TABLE `glpi_changetemplates` (
   `entities_id` int unsigned NOT NULL DEFAULT '0',
   `is_recursive` tinyint NOT NULL DEFAULT '0',
   `comment` text,
+  `allowed_statuses` varchar(255) NOT NULL DEFAULT '[1,9,10,7,4,11,12,5,8,6,14,13]',
   PRIMARY KEY (`id`),
   KEY `name` (`name`),
   KEY `entities_id` (`entities_id`),
@@ -7405,6 +7431,7 @@ CREATE TABLE `glpi_problemtemplates` (
   `entities_id` int unsigned NOT NULL DEFAULT '0',
   `is_recursive` tinyint NOT NULL DEFAULT '0',
   `comment` text,
+  `allowed_statuses` varchar(255) NOT NULL DEFAULT '[1,7,2,3,4,5,8,6]',
   PRIMARY KEY (`id`),
   KEY `name` (`name`),
   KEY `entities_id` (`entities_id`),
@@ -7420,6 +7447,8 @@ CREATE TABLE `glpi_ticketvalidations` (
   `users_id` int unsigned NOT NULL DEFAULT '0',
   `tickets_id` int unsigned NOT NULL DEFAULT '0',
   `users_id_validate` int unsigned NOT NULL DEFAULT '0',
+  `itemtype_target` varchar(255) NOT NULL,
+  `items_id_target` int unsigned NOT NULL DEFAULT '0',
   `comment_submission` text,
   `comment_validation` text,
   `status` int NOT NULL DEFAULT '2',
@@ -7430,6 +7459,7 @@ CREATE TABLE `glpi_ticketvalidations` (
   KEY `entities_id` (`entities_id`),
   KEY `users_id` (`users_id`),
   KEY `users_id_validate` (`users_id_validate`),
+  KEY `item_target` (`itemtype_target`,`items_id_target`),
   KEY `tickets_id` (`tickets_id`),
   KEY `submission_date` (`submission_date`),
   KEY `validation_date` (`validation_date`),
@@ -9197,6 +9227,41 @@ CREATE TABLE `glpi_snmpcredentials` (
    KEY `name` (`name`),
    KEY `snmpversion` (`snmpversion`),
    KEY `is_deleted` (`is_deleted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+DROP TABLE IF EXISTS `glpi_changes_changes`;
+CREATE TABLE `glpi_changes_changes` (
+   `id` int unsigned NOT NULL AUTO_INCREMENT,
+   `changes_id_1` int unsigned NOT NULL DEFAULT '0',
+   `changes_id_2` int unsigned NOT NULL DEFAULT '0',
+   `link` int NOT NULL DEFAULT '1',
+   PRIMARY KEY (`id`),
+   UNIQUE KEY `unicity` (`changes_id_1`,`changes_id_2`),
+   KEY `changes_id_2` (`changes_id_2`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+DROP TABLE IF EXISTS `glpi_problems_problems`;
+CREATE TABLE `glpi_problems_problems` (
+   `id` int unsigned NOT NULL AUTO_INCREMENT,
+   `problems_id_1` int unsigned NOT NULL DEFAULT '0',
+   `problems_id_2` int unsigned NOT NULL DEFAULT '0',
+   `link` int NOT NULL DEFAULT '1',
+   PRIMARY KEY (`id`),
+   UNIQUE KEY `unicity` (`problems_id_1`,`problems_id_2`),
+   KEY `problems_id_2` (`problems_id_2`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+DROP TABLE IF EXISTS `glpi_changesatisfactions`;
+CREATE TABLE `glpi_changesatisfactions` (
+   `id` int unsigned NOT NULL AUTO_INCREMENT,
+   `changes_id` int unsigned NOT NULL DEFAULT '0',
+   `type` int NOT NULL DEFAULT '1',
+   `date_begin` timestamp NULL DEFAULT NULL,
+   `date_answered` timestamp NULL DEFAULT NULL,
+   `satisfaction` int DEFAULT NULL,
+   `comment` text,
+   PRIMARY KEY (`id`),
+   UNIQUE KEY `changes_id` (`changes_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 SET FOREIGN_KEY_CHECKS=1;

@@ -780,7 +780,27 @@ $empty_data_builder = new class
                 'mode' => CronTask::MODE_EXTERNAL,
                 'lastrun' => null,
                 'logs_lifetime' => 30,
-            ],
+            ], [
+                'id' => 44,
+                'itemtype' => PendingReasonCron::getType(),
+                'name' => PendingReasonCron::TASK_NAME,
+                'frequency' => 30 * MINUTE_TIMESTAMP,
+                'param' => null,
+                'state' => CronTask::STATE_WAITING,
+                'mode' => CronTask::MODE_EXTERNAL,
+                'lastrun' => null,
+                'logs_lifetime' => 60,
+            ], [
+                'id' => 45,
+                'itemtype' => 'Change',
+                'name' => 'createinquest',
+                'frequency' => 86400,
+                'param' => null,
+                'state' => CronTask::STATE_WAITING,
+                'mode' => CronTask::MODE_INTERNAL,
+                'lastrun' => null,
+                'logs_lifetime' => 30,
+            ]
         ];
 
         $dashboards_data = include_once __DIR__ . "/migrations/update_9.4.x_to_9.5.0/dashboards.php";
@@ -2235,6 +2255,12 @@ $empty_data_builder = new class
                 'display_users_initials' => 1,
                 'contracts_strategy_default' => 0,
                 'transfers_strategy' => 0,
+                'inquest_config_change' => 1,
+                'inquest_rate_change' => 0,
+                'inquest_delay_change' => 0,
+                'inquest_max_rate_change' => 5,
+                'inquest_default_rate_change' => 3,
+                'inquest_mandatory_comment_change' => 0,
             ],
         ];
 
@@ -2865,6 +2891,20 @@ $empty_data_builder = new class
                 'event' => 'user_mention',
                 'is_recursive' => 1,
                 'is_active' => 1,
+            ], [
+                'id'           => 74,
+                'name'         => 'Change Satisfaction',
+                'itemtype'     => 'Change',
+                'event'        => 'satisfaction',
+                'is_recursive' => 1,
+                'is_active'    => 1,
+            ], [
+                'id'           => 75,
+                'name'         => 'Change Satisfaction Answer',
+                'itemtype'     => 'Change',
+                'event'        => 'replysatisfaction',
+                'is_recursive' => 1,
+                'is_active'    => 1,
             ],
         ];
 
@@ -3229,6 +3269,16 @@ $empty_data_builder = new class
                 'notifications_id' => '72',
                 'mode' => 'mailing',
                 'notificationtemplates_id' => 4,
+            ], [
+                'id'                       => 74,
+                'notifications_id'         => '74',
+                'mode'                     => 'mailing',
+                'notificationtemplates_id' => 30,
+            ], [
+                'id'                       => 75,
+                'notifications_id'         => '75',
+                'mode'                     => 'mailing',
+                'notificationtemplates_id' => 30,
             ],
         ];
 
@@ -3305,7 +3355,7 @@ $empty_data_builder = new class
                 'notifications_id' => '19',
             ], [
                 'id' => '15',
-                'items_id' => '14',
+                'items_id' => '40',
                 'type' => '1',
                 'notifications_id' => '12',
             ], [
@@ -3590,7 +3640,7 @@ $empty_data_builder = new class
                 'notifications_id' => '36',
             ], [
                 'id' => '73',
-                'items_id' => '14',
+                'items_id' => '40',
                 'type' => '1',
                 'notifications_id' => '37',
             ], [
@@ -3923,6 +3973,21 @@ $empty_data_builder = new class
                 'items_id' => '39',
                 'type' => '1',
                 'notifications_id' => '72',
+            ], [
+                'id'               => '142',
+                'items_id'         => '3',
+                'type'             => '1',
+                'notifications_id' => '74',
+            ], [
+                'id'               => '143',
+                'items_id'         => '3',
+                'type'             => '1',
+                'notifications_id' => '75',
+            ], [
+                'id'               => '144',
+                'items_id'         => '2',
+                'type'             => '1',
+                'notifications_id' => '75',
             ],
         ];
 
@@ -4039,6 +4104,10 @@ $empty_data_builder = new class
                 'id' => '28',
                 'name' => 'Plugin updates',
                 'itemtype' => 'Glpi\\Marketplace\\Controller',
+            ], [
+                'id'       => '30',
+                'name'     => 'Change Satisfaction',
+                'itemtype' => 'Change',
             ],
         ];
 
@@ -4899,6 +4968,17 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
 &lt;li&gt;##plugin.name## :##plugin.old_version## -&gt; ##plugin.version##&lt;/li&gt;
 ##ENDFOREACHplugins##&lt;/ul&gt;
 &lt;p&gt;##lang.marketplace.url## : &lt;a title="##lang.marketplace.url##" href="##marketplace.url##" target="_blank" rel="noopener"&gt;##marketplace.url##&lt;/a&gt;&lt;/p&gt;'
+            ], [
+                'id'                       => '30',
+                'notificationtemplates_id' => '30',
+                'language'                 => '',
+                'subject'                  => '##change.action## ##change.title##',
+                'content_text'             => '##lang.change.title## : ##change.title##
+##lang.change.closedate## : ##change.closedate##
+##lang.satisfaction.text## ##change.urlsatisfaction##',
+                'content_html'             => '&lt;p&gt;##lang.change.title## : ##change.title##&lt;/p&gt;
+&lt;p&gt;##lang.change.closedate## : ##change.closedate##&lt;/p&gt;
+&lt;p&gt;##lang.satisfaction.text## &lt;a href="##change.urlsatisfaction##"&gt;##change.urlsatisfaction##&lt;/a&gt;&lt;/p&gt;'
             ],
         ];
 
@@ -5346,7 +5426,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
             ], [
                 'profiles_id' => self::PROFILE_OBSERVER,
                 'name' => 'ticket',
-                'rights' => READ | CREATE | DELETE | PURGE | Ticket::READALL | Ticket::READASSIGN | Ticket::OWN | Ticket::SURVEY,
+                'rights' => READ | CREATE | DELETE | PURGE | Ticket::READALL | Ticket::READASSIGN | Ticket::OWN | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_OBSERVER,
                 'name' => 'followup',
@@ -5643,7 +5723,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
                 'profiles_id' => self::PROFILE_ADMIN,
                 'name' => 'ticket',
                 'rights' => ALLSTANDARDRIGHT | Ticket::READALL | Ticket::READGROUP | Ticket::READASSIGN | Ticket::ASSIGN
-                    | Ticket::STEAL | Ticket::OWN | Ticket::CHANGEPRIORITY | Ticket::SURVEY,
+                    | Ticket::STEAL | Ticket::OWN | Ticket::CHANGEPRIORITY | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_ADMIN,
                 'name' => 'followup',
@@ -5940,7 +6020,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
                 'profiles_id' => self::PROFILE_SUPER_ADMIN,
                 'name' => 'ticket',
                 'rights' => ALLSTANDARDRIGHT | Ticket::READALL | Ticket::READGROUP | Ticket::READASSIGN | Ticket::ASSIGN
-                    | Ticket::STEAL | Ticket::OWN | Ticket::CHANGEPRIORITY | Ticket::SURVEY,
+                    | Ticket::STEAL | Ticket::OWN | Ticket::CHANGEPRIORITY | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_SUPER_ADMIN,
                 'name' => 'followup',
@@ -6238,7 +6318,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
             ], [
                 'profiles_id' => self::PROFILE_HOTLINER,
                 'name' => 'ticket',
-                'rights' => Ticket::READMY | UPDATE | CREATE | Ticket::READALL | Ticket::ASSIGN | Ticket::SURVEY,
+                'rights' => Ticket::READMY | UPDATE | CREATE | Ticket::READALL | Ticket::ASSIGN | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_HOTLINER,
                 'name' => 'followup',
@@ -6524,7 +6604,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
                 'profiles_id' => self::PROFILE_TECHNICIAN,
                 'name' => 'ticket',
                 'rights' => Ticket::READMY | UPDATE | CREATE | Ticket::READALL | Ticket::READGROUP
-                    | Ticket::OWN | Ticket::SURVEY,
+                    | Ticket::OWN | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_TECHNICIAN,
                 'name' => 'followup',
@@ -6815,7 +6895,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
                 'profiles_id' => self::PROFILE_SUPERVISOR,
                 'name' => 'ticket',
                 'rights' => ALLSTANDARDRIGHT | Ticket::READALL | Ticket::READGROUP | Ticket::READASSIGN | Ticket::ASSIGN
-                    | Ticket::STEAL | Ticket::OWN | Ticket::CHANGEPRIORITY | Ticket::SURVEY,
+                    | Ticket::STEAL | Ticket::OWN | Ticket::CHANGEPRIORITY | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_SUPERVISOR,
                 'name' => 'followup',
@@ -7197,7 +7277,7 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
             ], [
                 'profiles_id' => self::PROFILE_READ_ONLY,
                 'name' => 'ticket',
-                'rights' => Ticket::READMY | Ticket::READALL | Ticket::READGROUP | Ticket::READASSIGN | Ticket::SURVEY,
+                'rights' => Ticket::READMY | Ticket::READALL | Ticket::READGROUP | Ticket::READASSIGN | CommonITILObject::SURVEY,
             ], [
                 'profiles_id' => self::PROFILE_READ_ONLY,
                 'name' => 'ticketcost',
@@ -7733,6 +7813,18 @@ style="color: #8b8c8f; font-weight: bold; text-decoration: underline;"&gt;
             ], [
                 'profiles_id' => self::PROFILE_READ_ONLY,
                 'name' => 'database',
+                'rights' => READ,
+            ], [
+                'profiles_id' => self::PROFILE_SUPER_ADMIN,
+                'name' => 'rule_change',
+                'rights' => READ | UPDATE | CREATE | PURGE | RuleTicket::PARENT,
+            ], [
+                'profiles_id' => self::PROFILE_ADMIN,
+                'name' => 'rule_change',
+                'rights' => READ,
+            ], [
+                'profiles_id' => self::PROFILE_READ_ONLY,
+                'name' => 'rule_change',
                 'rights' => READ,
             ],
             [

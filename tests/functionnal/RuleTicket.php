@@ -35,35 +35,27 @@
 
 namespace tests\units;
 
-use CommonITILValidation;
 use Contract;
 use ContractType;
-use DbTestCase;
-use Glpi\Toolbox\Sanitizer;
-use Group_User;
-use ITILFollowup;
-use ITILFollowupTemplate;
-use RuleAction;
-use RuleCriteria;
-use TaskTemplate;
 use Ticket_Contract;
-use TicketTask;
-use Toolbox;
+
+// Force import because of atoum autoloader not working
+require_once 'RuleCommonITILObject.php';
 
 /* Test for inc/ruleticket.class.php */
 
-class RuleTicket extends DbTestCase
+class RuleTicket extends RuleCommonITILObject
 {
     public function testGetCriteria()
     {
-        $rule = new \RuleTicket();
+        $rule = $this->getRuleInstance();
         $criteria = $rule->getCriterias();
         $this->array($criteria)->size->isGreaterThan(20);
     }
 
     public function testGetActions()
     {
-        $rule = new \RuleTicket();
+        $rule = $this->getRuleInstance();
         $actions  = $rule->getActions();
         $this->array($actions)->size->isGreaterThan(20);
     }
@@ -1379,7 +1371,7 @@ class RuleTicket extends DbTestCase
     {
         $this->login();
 
-        $ruleticket = new \RuleTicket();
+        $ruleticket = $this->getRuleInstance();
         $rulecrit   = new \RuleCriteria();
         $ruleaction = new \RuleAction();
 
@@ -1720,8 +1712,8 @@ class RuleTicket extends DbTestCase
             'name'         => 'test category code',
             'match'        => 'AND',
             'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONADD,
+            'sub_type'     => $ruleticket::getType(),
+            'condition'    => \RuleCommonITILObject::ONADD,
             'is_recursive' => 1,
         ]);
         $this->checkInput($ruleticket, $ruletid, $ruletinput);
@@ -2316,350 +2308,9 @@ class RuleTicket extends DbTestCase
             ]
         ]);
 
-        // Verify ticket does not have priority 5
-        $this->boolean($ticket->getFromDB($tickets_id))->isTrue();
-        $this->integer($ticket->fields['priority'])->isNotEqualTo(5);
-    }
-
-    public function testStopProcessingAction()
-    {
-        $this->login();
-
-        // Create rule
-        $ruleticket = new \RuleTicket();
-        $rulecrit   = new \RuleCriteria();
-        $ruleaction = new \RuleAction();
-
-        $ruletid_1 = $ruleticket->add($ruletinput = [
-            'name'         => 'stopProcessingAction_1',
-            'match'        => 'AND',
-            'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONADD,
-            'is_recursive' => 1,
-        ]);
-        $this->checkInput($ruleticket, $ruletid_1, $ruletinput);
-
-        $ruletid_2 = $ruleticket->add($ruletinput = [
-            'name'         => 'stopProcessingAction_2',
-            'match'        => 'AND',
-            'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONADD,
-            'is_recursive' => 1,
-        ]);
-        $this->checkInput($ruleticket, $ruletid_2, $ruletinput);
-
-        $ruletid_3 = $ruleticket->add($ruletinput = [
-            'name'         => 'stopProcessingAction_3',
-            'match'        => 'AND',
-            'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONADD,
-            'is_recursive' => 1,
-        ]);
-        $this->checkInput($ruleticket, $ruletid_3, $ruletinput);
-
-        foreach ([$ruletid_1, $ruletid_2, $ruletid_3] as $ruletid) {
-            $crit_id = $rulecrit->add($crit_input = [
-                'rules_id'  => $ruletid,
-                'criteria'  => 'name',
-                'condition' => \Rule::PATTERN_IS,
-                'pattern'   => 'stopProcessingAction',
-            ]);
-            $this->checkInput($rulecrit, $crit_id, $crit_input);
-        }
-
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid_1,
-            'action_type' => 'assign',
-            'field'       => 'impact',
-            'value'       => 1,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid_2,
-            'action_type' => 'assign',
-            'field'       => 'impact',
-            'value'       => 2,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid_2,
-            'action_type' => 'assign',
-            'field'       => '_stop_rules_processing',
-            'value'       => 1,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid_3,
-            'action_type' => 'assign',
-            'field'       => 'impact',
-            'value'       => 3,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-
-        // Check ticket that trigger rule on creation
-        $ticket = new \Ticket();
-        $tickets_id = $ticket->add($ticket_input = [
-            'name'              => 'stopProcessingAction',
-            'content'           => 'test stopProcessingAction'
-        ]);
-        $this->checkInput($ticket, $tickets_id, $ticket_input);
-
-        // Check that the rule was executed
-        $this->boolean($ticket->getFromDB($tickets_id))->isTrue();
-        $this->integer($ticket->fields['impact'])->isEqualTo(2);
-    }
-
-    public function testAppendUserOnUpdate()
-    {
-        $this->login();
-
-        $user = new \User();
-        $user_id = $user->add($user_input = [
-            "name" => "user1"
-        ]);
-        $this->checkInput($user, $user_id, $user_input);
-
-        // Create rule
-        $ruleticket = new \RuleTicket();
-        $rulecrit   = new \RuleCriteria();
-        $ruleaction = new \RuleAction();
-
-        $ruletid = $ruleticket->add($ruletinput = [
-            'name'         => 'testAppendUserOnUpdate',
-            'match'        => 'AND',
-            'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONUPDATE,
-            'is_recursive' => 1,
-        ]);
-        $this->checkInput($ruleticket, $ruletid, $ruletinput);
-
-        //create criteria to check
-        $crit_id = $rulecrit->add($crit_input = [
-            'rules_id'  => $ruletid,
-            'criteria'  => 'content',
-            'condition' => \Rule::PATTERN_EXISTS,
-            'pattern'   => 1,
-        ]);
-        $this->checkInput($rulecrit, $crit_id, $crit_input);
-
-        //create action to add group as group requester
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid,
-            'action_type' => 'append',
-            'field'       => '_users_id_requester',
-            'value'       => $user_id,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-
-        // Create ticket
-        $ticket = new \Ticket();
-        $tickets_id = $ticket->add($ticket_input = [
-            'name'             => 'testAppendUserOnUpdate',
-            'content'          => 'test',
-        ]);
-        $this->checkInput($ticket, $tickets_id, $ticket_input);
-
-        $ticketUser = new \Ticket_User();
-        $this->boolean(
-            $ticketUser->getFromDBByCrit([
-                'tickets_id'    => $tickets_id,
-                'users_id'      => $user_id,
-                'type'          => \CommonITILActor::REQUESTER
-            ])
-        )->isFalse();
-
-        // Test updating ticket
-        $this->boolean($ticket->update(['id' => $tickets_id, 'content' => 'test2']))->isTrue();
-        $result = $ticketUser->getFromDBByCrit([
-            'tickets_id'    => $tickets_id,
-            'users_id'      => $user_id,
-            'type'          => \CommonITILActor::REQUESTER
-        ]);
-        $this->boolean($result)->isTrue();
-
-        $this->boolean($ticketUser->delete(['id' => $ticketUser->getID()]))->isTrue();
-
-        // Test ticket update when _actors input is present but empty (emulate update from form when no actors present already)
-        $this->boolean($ticket->update(['id' => $tickets_id, 'content' => 'test3', '_actors' => []]))->isTrue();
-        $result = $ticketUser->getFromDBByCrit([
-            'tickets_id'    => $tickets_id,
-            'users_id'      => $user_id,
-            'type'          => \CommonITILActor::REQUESTER
-        ]);
-        $this->boolean($result)->isTrue();
-    }
-
-    public function testAppendGroupOnUpdate()
-    {
-        $this->login();
-
-        //create new group1
-        $group1 = new \Group();
-        $group_id1 = $group1->add($group_input1 = [
-            "name" => "group1",
-            "is_requester" => true
-        ]);
-        $this->checkInput($group1, $group_id1, $group_input1);
-
-        // Create rule
-        $ruleticket = new \RuleTicket();
-        $rulecrit   = new \RuleCriteria();
-        $ruleaction = new \RuleAction();
-
-        $ruletid = $ruleticket->add($ruletinput = [
-            'name'         => 'testAppendGroupOnUpdate',
-            'match'        => 'AND',
-            'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONUPDATE,
-            'is_recursive' => 1,
-        ]);
-        $this->checkInput($ruleticket, $ruletid, $ruletinput);
-
-        //create criteria to check
-        $crit_id = $rulecrit->add($crit_input = [
-            'rules_id'  => $ruletid,
-            'criteria'  => 'content',
-            'condition' => \Rule::PATTERN_EXISTS,
-            'pattern'   => 1,
-        ]);
-        $this->checkInput($rulecrit, $crit_id, $crit_input);
-
-        //create action to add group as group requester
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid,
-            'action_type' => 'append',
-            'field'       => '_groups_id_requester',
-            'value'       => $group_id1,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-
-        // Create ticket
-        $ticket = new \Ticket();
-        $tickets_id = $ticket->add($ticket_input = [
-            'name'             => 'testAppendGroupOnUpdate',
-            'content'          => 'test',
-        ]);
-        $this->checkInput($ticket, $tickets_id, $ticket_input);
-
-        //load TicketGroup1 (expected false)
-        $ticketGroup = new \Group_Ticket();
-        $this->boolean(
-            $ticketGroup->getFromDBByCrit([
-                'tickets_id'         => $tickets_id,
-                'groups_id'          => $group_id1,
-                'type'               => \CommonITILActor::REQUESTER
-            ])
-        )->isFalse();
-
-        // Test updating ticket
-        $this->boolean($ticket->update(['id' => $tickets_id, 'content' => 'test2']))->isTrue();
-        $result = $ticketGroup->getFromDBByCrit([
-            'tickets_id'         => $tickets_id,
-            'groups_id'          => $group_id1,
-            'type'               => \CommonITILActor::REQUESTER
-        ]);
-        $this->boolean($result)->isTrue();
-
-        $this->boolean($ticketGroup->delete(['id' => $ticketGroup->getID()]))->isTrue();
-
-        // Test ticket update when _actors input is present but empty (emulate update from form when no actors present already)
-        $this->boolean($ticket->update(['id' => $tickets_id, 'content' => 'test3', '_actors' => []]))->isTrue();
-        $result = $ticketGroup->getFromDBByCrit([
-            'tickets_id'         => $tickets_id,
-            'groups_id'          => $group_id1,
-            'type'               => \CommonITILActor::REQUESTER
-        ]);
-        $this->boolean($result)->isTrue();
-    }
-
-    public function testAppendSupplierOnUpdate()
-    {
-        $this->login();
-
-        $supplier = new \Supplier();
-        $supplier_id = $supplier->add($group_input1 = [
-            "name" => "supplier1",
-            'entities_id'   => getItemByTypeName('Entity', '_test_root_entity', true)
-        ]);
-        $this->checkInput($supplier, $supplier_id, $group_input1);
-
-        // Create rule
-        $ruleticket = new \RuleTicket();
-        $rulecrit   = new \RuleCriteria();
-        $ruleaction = new \RuleAction();
-
-        $ruletid = $ruleticket->add($ruletinput = [
-            'name'         => 'testAppendSupplierOnUpdate',
-            'match'        => 'AND',
-            'is_active'    => 1,
-            'sub_type'     => 'RuleTicket',
-            'condition'    => \RuleTicket::ONUPDATE,
-            'is_recursive' => 1,
-        ]);
-        $this->checkInput($ruleticket, $ruletid, $ruletinput);
-
-        //create criteria to check
-        $crit_id = $rulecrit->add($crit_input = [
-            'rules_id'  => $ruletid,
-            'criteria'  => 'content',
-            'condition' => \Rule::PATTERN_EXISTS,
-            'pattern'   => 1,
-        ]);
-        $this->checkInput($rulecrit, $crit_id, $crit_input);
-
-        //create action to add group as group requester
-        $action_id = $ruleaction->add($action_input = [
-            'rules_id'    => $ruletid,
-            'action_type' => 'append',
-            'field'       => '_suppliers_id_assign',
-            'value'       => $supplier_id,
-        ]);
-        $this->checkInput($ruleaction, $action_id, $action_input);
-
-        // Create ticket
-        $ticket = new \Ticket();
-        $tickets_id = $ticket->add($ticket_input = [
-            'name'             => 'testAppendSupplierOnUpdate',
-            'content'          => 'test',
-        ]);
-        $this->checkInput($ticket, $tickets_id, $ticket_input);
-
-        //load TicketGroup1 (expected false)
-        $ticketSupplier = new \Supplier_Ticket();
-        $this->boolean(
-            $ticketSupplier->getFromDBByCrit([
-                'tickets_id'    => $tickets_id,
-                'suppliers_id'  => $supplier_id,
-                'type'          => \CommonITILActor::ASSIGN
-            ])
-        )->isFalse();
-
-        // Test updating ticket
-        $this->boolean($ticket->update(['id' => $tickets_id, 'content' => 'test2']))->isTrue();
-        $result = $ticketSupplier->getFromDBByCrit([
-            'tickets_id'    => $tickets_id,
-            'suppliers_id'  => $supplier_id,
-            'type'          => \CommonITILActor::ASSIGN
-        ]);
-        $this->boolean($result)->isTrue();
-
-        $this->boolean($ticketSupplier->delete(['id' => $ticketSupplier->getID()]))->isTrue();
-
-        // Test ticket update when _actors input is present but empty (emulate update from form when no actors present already)
-        $this->boolean($ticket->update(['id' => $tickets_id, 'content' => 'test3', '_actors' => []]))->isTrue();
-        $result = $ticketSupplier->getFromDBByCrit([
-            'tickets_id'    => $tickets_id,
-            'suppliers_id'  => $supplier_id,
-            'type'          => \CommonITILActor::ASSIGN
-        ]);
-        $this->boolean($result)->isTrue();
+        // Verify ITIL Object does not have priority 5
+        $this->boolean($itil->getFromDB($itil_id))->isTrue();
+        $this->integer($itil->fields['priority'])->isNotEqualTo(5);
     }
 
     public function testNewActors()

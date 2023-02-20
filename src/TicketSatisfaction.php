@@ -33,7 +33,7 @@
  * ---------------------------------------------------------------------
  */
 
-class TicketSatisfaction extends CommonDBTM
+class TicketSatisfaction extends CommonITILSatisfaction
 {
     public static $rightname = 'ticket';
 
