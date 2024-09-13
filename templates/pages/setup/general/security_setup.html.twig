@@ -33,6 +33,7 @@
 
 {% extends "pages/setup/general/base_form.html.twig" %}
 {% import 'components/form/fields_macros.html.twig' as fields %}
+{% import 'components/alerts_macros.html.twig' as alerts %}
 
 {% set field_options = {
    'field_class': 'col-12 col-xxl-6 col-sm-6',
@@ -183,4 +184,33 @@
       ) }}
    {% endif %}
 
+   {{ fields.largeTitle(__('IP access restriction'), 'ti ti-forbid') }}
+
+   {{ fields.sliderField(
+      'use_ip_access_restriction',
+      config['use_ip_access_restriction'],
+      __('Enable IP access restriction'),
+      inline_field_options
+   ) }}
+
+   {% if config['use_ip_access_restriction'] %}
+      {{ fields.dropdownArrayField(
+         'default_ip_access_rule',
+         config['default_ip_access_rule'],
+         {
+            'authorized': __('Authorized'),
+            'denied': __('Denied')
+         },
+         __('Default access rule'),
+         inline_field_options|merge({
+            'width': 'auto',
+            helper: __('Denied mode only applies if you have at least one active IP address allowed.')
+         })
+      ) }}
+
+      {{ alerts.alert_danger(
+         __('Configuration error, impossible to save'),
+         __('The default access rule is set to "Denied" but no IP address is allowed.')
+      ) }}
+   {% endif %}
 {% endblock %}

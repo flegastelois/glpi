@@ -1991,6 +1991,19 @@ class Config extends CommonDBTM
     }
 
     /**
+     * Check if the "use_ip_access_restriction" parameter is enabled
+     *
+     * @return bool
+     */
+    public static function areIPRestrictionSecurityEnabled(): bool
+    {
+        /** @var array $CFG_GLPI */
+        global $CFG_GLPI;
+
+        return $CFG_GLPI["use_ip_access_restriction"];
+    }
+
+    /**
      * Security policy form
      *
      * @since 9.5.0
@@ -2010,6 +2023,10 @@ class Config extends CommonDBTM
             'canedit' => Session::haveRight(self::$rightname, UPDATE),
             'config'  => $CFG_GLPI,
         ]);
+
+        if (self::areIPRestrictionSecurityEnabled()) {
+            TemplateRenderer::getInstance()->display('pages/setup/general/security_ipaccessrestriction_section.html.twig');
+        }
     }
 
     /**
