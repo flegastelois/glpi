@@ -77,19 +77,4 @@
       helper: __('To enable or disable sending telemetry, please change the "telemetry" automatic action.')
    })) }}
    {{ fields.htmlField('', call('Telemetry::getViewLink'), __('Telemetry data'), field_options) }}
-
-   {{ fields.smallTitle(__('GLPI update')) }}
-   {% set btn_check_updates %}
-      <a class="btn btn-secondary" href="?check_version"><i class="ti ti-reload"></i>
-         <span>{{ __('Check if a new version is available') }}</span>
-      </a>
-   {% endset %}
-   {{ fields.htmlField(
-      '',
-      btn_check_updates,
-      "GLPI " ~ constant('GLPI_VERSION') ~ " Copyright (C) 2015-" ~ constant('GLPI_YEAR') ~ " Teclib' and contributors",
-      field_options|merge({
-         full_width: true
-      })
-   ) }}
 {% endblock %}

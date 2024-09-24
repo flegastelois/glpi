@@ -137,6 +137,7 @@ class Config extends CommonDBTM
         $this->addStandardTab(__CLASS__, $ong, $options);
         $this->addStandardTab(DisplayPreference::class, $ong, $options);
         $this->addStandardTab('GLPINetwork', $ong, $options);
+        $this->addStandardTab('GLPIUpdate', $ong, $options);
         $this->addStandardTab('Log', $ong, $options);
 
         return $ong;
@@ -1398,6 +1399,9 @@ class Config extends CommonDBTM
 
             case 'GLPINetwork':
                 return self::createTabEntry(GLPINetwork::getTypeName(), 0, $item::getType(), GLPINetwork::getIcon());
+
+            case 'GLPIUpdate':
+                return self::createTabEntry(GLPIUpdate::getTypeName(), 0, $item::getType(), GLPIUpdate::getIcon());
 
             case Impact::getType():
                 return Impact::getTypeName();

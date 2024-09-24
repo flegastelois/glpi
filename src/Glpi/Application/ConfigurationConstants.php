@@ -109,6 +109,7 @@ final class ConfigurationConstants
                 'GLPI_MARKETPLACE_MANUAL_DOWNLOADS' => true, // propose manual download link of plugins which cannot be installed/updated by marketplace
                 'GLPI_USER_AGENT_EXTRA_COMMENTS'    => '', // Extra comment to add to GLPI User-Agent
                 'GLPI_DOCUMENTATION_ROOT_URL'       => 'https://links.glpi-project.org', // Official documentations root URL
+                'GLPI_GITHUB_API_RELEASE_URL'       => 'https://api.github.com/repos/glpi-project/glpi/releases', // Github API URL
 
                 // SQL compatibility
                 'GLPI_DISABLE_ONLY_FULL_GROUP_BY_SQL_MODE' => '1', // '1' to disable ONLY_FULL_GROUP_BY 'sql_mode'

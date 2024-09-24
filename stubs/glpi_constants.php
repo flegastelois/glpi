@@ -86,3 +86,4 @@ define('GLPI_TELEMETRY_URI', null);
 define('GLPI_TEXT_MAXSIZE', null);
 define('GLPI_USER_AGENT_EXTRA_COMMENTS', null);
 define('PLUGINS_DIRECTORIES', null);
+define('GLPI_GITHUB_API_RELEASE_URL', null);

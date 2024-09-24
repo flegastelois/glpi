@@ -167,6 +167,16 @@ class CronTask extends CommonDBTM
         return 0;
     }
 
+   /**
+     * Check if the task is enabled
+     *
+     * @return boolean true if enabled, false otherwise
+     */
+    public function isEnabled(): bool
+    {
+        return $this->fields['state'] !== self::STATE_DISABLE;
+    }
+
     /**
      * Get all itemtypes used
      *
@@ -1768,7 +1778,7 @@ TWIG, ['msg' => __('Last run list')]);
      **/
     public static function cronCheckUpdate($task)
     {
-        $result = Toolbox::checkNewVersionAvailable();
+        $result = GLPIUpdate::checkNewVersionAvailable();
         $task->log($result);
 
         return 1;

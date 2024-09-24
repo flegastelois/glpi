@@ -1007,38 +1007,14 @@ class Toolbox
     /**
      * Check if new version is available
      *
+     * @deprecated 11.0.0 Use GLPIUpdate::checkNewVersionAvailable()
+     *
      * @return string
      **/
     public static function checkNewVersionAvailable()
     {
-       //parse github releases (get last version number)
-        $error = "";
-        $json_gh_releases = self::getURLContent("https://api.github.com/repos/glpi-project/glpi/releases", $error);
-        if (empty($json_gh_releases)) {
-            return $error;
-        }
-
-        $all_gh_releases = json_decode($json_gh_releases, true);
-        $released_tags = [];
-        foreach ($all_gh_releases as $release) {
-            if ($release['prerelease'] == false) {
-                $released_tags[] =  $release['tag_name'];
-            }
-        }
-        usort($released_tags, 'version_compare');
-        $latest_version = array_pop($released_tags);
-
-        if (strlen(trim($latest_version)) == 0) {
-            return $error;
-        } else {
-            $currentVersion = preg_replace('/^((\d+\.?)+).*$/', '$1', GLPI_VERSION);
-            if (version_compare($currentVersion, $latest_version, '<')) {
-                Config::setConfigurationValues('core', ['founded_new_version' => $latest_version]);
-                return sprintf(__('A new version is available: %s.'), $latest_version);
-            } else {
-                return __('You have the latest available version');
-            }
-        }
+        Toolbox::deprecated('Use "GLPIUpdate::checkNewVersionAvailable()"');
+        GLPIUpdate::checkNewVersionAvailable();
     }
 
 

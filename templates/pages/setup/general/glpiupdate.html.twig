@@ -1,0 +1,109 @@
+{#
+ # ---------------------------------------------------------------------
+ #
+ # GLPI - Gestionnaire Libre de Parc Informatique
+ #
+ # http://glpi-project.org
+ #
+ # @copyright 2015-2024 Teclib' and contributors.
+ # @copyright 2003-2014 by the INDEPNET Development Team.
+ # @licence   https://www.gnu.org/licenses/gpl-3.0.html
+ #
+ # ---------------------------------------------------------------------
+ #
+ # LICENSE
+ #
+ # This file is part of GLPI.
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ #
+ # ---------------------------------------------------------------------
+#}
+
+{% extends 'pages/setup/general/base_form.html.twig' %}
+{% import 'components/form/fields_macros.html.twig' as fields %}
+
+{% set field_options = {
+   'field_class': 'col-12 col-xxl-6 col-sm-6',
+   'full_width': true,
+   'rand': rand|default(random())
+} %}
+{% set inline_field_options = field_options|merge({
+   'input_addclass': 'w-auto'
+}) %}
+
+{% block config_fields %}
+   {{ fields.largeTitle(__('Check for updates'), 'ti ti-shield-lock') }}
+   {{ fields.htmlField('', crontask_enabled ? __('Yes') : __('No'), __('Is automatic action that checks for updates enabled'), inline_field_options|merge({
+      helper: __('To enable or disable, please change the "checkupdate" automatic action.')
+   })) }}
+
+   {{ fields.htmlField('', glpi_version, __('Current version'), inline_field_options) }}
+   {% set btn_check_updates %}
+      <a class="btn btn-secondary" href="?check_version"><i class="ti ti-reload"></i>
+         <span>{{ __('Check if a new version is available') }}</span>
+      </a>
+   {% endset %}
+   {{ fields.htmlField('', btn_check_updates, '', inline_field_options) }}
+   <div class="row ps-2 mb-3">
+      <div class="col-7">
+         {{ fields.largeTitle(__('Latest official version available'), 'ti ti-tag') }}
+         <div class="card" style="border: 1px solid {{ is_up_to_date ? '#dee2e6' : 'red' }}">
+            <div class="card-stamp">
+               <div class="card-stamp-icon bg-{{ is_up_to_date ? 'green' : 'red' }}">
+                  <i class="ti ti-{{ is_up_to_date ? 'check' : 'mood-angry' }}"></i>
+               </div>
+            </div>
+            <div class="card-body">
+               {% if github_releases|length > 0 %}
+                  <h3 class="card-title">{{ github_releases[0].tag_name }} - {{ github_releases[0].published_at|date('Y-m-d') }}
+                  {% if is_up_to_date == false %}
+                     <span class="badge bg-red text-red-fg">{{__('You are not up to date!!')}}</span>
+                  {% else %}
+                     <span class="badge badge-outline text-green">{{__('You are up to date')}}</span>
+                  {% endif %}
+                  </h3>
+                  <div>
+                        {{ github_releases[0].body_html|safe_html }}
+                        <a href="{{ github_releases[0].html_url }}" target="_blank" class="btn btn-primary">{{__('View this release on GitHub') }}</a>
+                  </div>
+               {% else %}
+                  <p>No releases available.</p>
+               {% endif %}
+            </div>
+         </div>
+      </div>
+
+      <div class="col-5">
+         {{ fields.largeTitle(__('10 olders releases'), 'ti ti-archive') }}
+         <div class="accordion" id="accordion-primary">
+               {% for release in github_releases|slice(1) %}
+                  <div class="accordion-item">
+                     <h2 class="accordion-header" id="heading{{ loop.index }}">
+                           <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}" aria-expanded="true" aria-controls="collapse{{ loop.index }}">
+                              <span class="badge badge-outline">{{ release.tag_name }} - {{ release.published_at|date('Y-m-d') }}</span>
+                           </button>
+                     </h2>
+                     <div id="collapse{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading{{ loop.index }}" data-bs-parent="#accordion-primary">
+                           <div class="accordion-body">
+                              {{ release.body_html|safe_html }}
+                              <a href="{{ release.html_url }}" target="_blank" class="btn btn-primary">{{__('View this release on GitHub') }}</a>
+                           </div>
+                     </div>
+                  </div>
+               {% endfor %}
+            </div>
+      </div>
+   </div>
+{% endblock %}
