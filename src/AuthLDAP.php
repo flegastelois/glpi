@@ -458,17 +458,50 @@ class AuthLDAP extends CommonDBTM
                     $ma->addMessage($item->getErrorMessage(ERROR_RIGHT));
                     return;
                 }
+                $mode = (int) ($_REQUEST['mode'] ?? self::ACTION_IMPORT);
+                $authldaps_id = (int) ($_REQUEST['authldaps_id'] ?? 0);
+                $config_ldap = new self();
+                $config_ldap->getFromDB($authldaps_id);
                 foreach ($ids as $id) {
+                    $identifier_field = $mode === self::ACTION_IMPORT
+                        ? $config_ldap->fields['login_field']
+                        : $config_ldap->getLdapIdentifierToUse();
+
+                    $result = self::ldapImportUserByServerId(
+                        [
+                            'method' => self::IDENTIFIER_LOGIN,
+                            'value'  => $id,
+                            'identifier_field' => $identifier_field,
+                        ],
+                        $mode,
+                        $authldaps_id,
+                        true
+                    );
+
                     if (
-                        self::ldapImportUserByServerId(
-                            ['method' => self::IDENTIFIER_LOGIN,
-                                'value'  => $id,
-                            ],
-                            (int) $_REQUEST['mode'],
-                            $_REQUEST['authldaps_id'],
-                            true
-                        )
+                        $result === false
+                        && $mode === self::ACTION_SYNCHRONIZE
+                        && $config_ldap->isSyncFieldEnabled()
+                        && $identifier_field !== $config_ldap->fields['login_field']
                     ) {
+                        $tmp_user = new User();
+                        if ($tmp_user->getFromDBbySyncField($id)) {
+                            $result = self::ldapImportUserByServerId(
+                                [
+                                    'method' => self::IDENTIFIER_LOGIN,
+                                    'value'  => $tmp_user->fields['name'],
+                                    'identifier_field' => $config_ldap->fields['login_field'],
+                                    'user_field' => 'name',
+                                    'user_dn' => false,
+                                ],
+                                $mode,
+                                $authldaps_id,
+                                true
+                            );
+                        }
+                    }
+
+                    if ($result !== false) {
                         $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_OK);
                     } else {
                         $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_KO);
@@ -1671,8 +1704,11 @@ TWIG, $twig_params);
 
         $entries = [];
         foreach ($ldap_users as $userinfos) {
+            $entry_id = $values['mode'] == self::ACTION_IMPORT
+                ? $userinfos['link']
+                : $userinfos['uid'];
             $entry = [
-                'id' => $userinfos['uid'],
+                'id' => $entry_id,
             ];
             if ($config_ldap->isSyncFieldEnabled()) {
                 $entry['sync_field'] = $userinfos['uid'];
@@ -1957,7 +1993,7 @@ TWIG, $twig_params);
             if ($values['ldap_filter'] === '') {
                 $filter = "(" . $field_for_sync . "=*)";
                 if (!empty($config_ldap->fields['condition'])) {
-                    $filter = "(& $filter " . $config_ldap->fields['condition'] . ")";
+                    $filter = "(&" . $filter . $config_ldap->fields['condition'] . ")";
                 }
             } else {
                 $filter = $values['ldap_filter'];
@@ -2607,17 +2643,35 @@ TWIG, $twig_params);
                 $user_field = 'sync_field';
                 $id_field   = $authldap->fields['sync_field'];
             }
-            return self::ldapImportUserByServerId(
+            $result = self::ldapImportUserByServerId(
                 [
                     'method'             => self::IDENTIFIER_LOGIN,
                     'value'              => $user->fields[$user_field],
                     'identifier_field'   => $id_field,
                     'user_field'         => $user_field,
+                    'user_dn'            => $user->fields['user_dn'] ?? false,
                 ],
                 self::ACTION_SYNCHRONIZE,
                 $user->fields["auths_id"],
                 $display
             );
+
+            if ($result === false && $user_field === 'sync_field') {
+                return self::ldapImportUserByServerId(
+                    [
+                        'method'             => self::IDENTIFIER_LOGIN,
+                        'value'              => $user->fields['name'],
+                        'identifier_field'   => $authldap->fields['login_field'],
+                        'user_field'         => 'name',
+                        'user_dn'            => false,
+                    ],
+                    self::ACTION_SYNCHRONIZE,
+                    $user->fields["auths_id"],
+                    $display
+                );
+            }
+
+            return $result;
         }
         return false;
     }
@@ -2684,11 +2738,27 @@ TWIG, $twig_params);
                 'search_parameters' => $search_parameters,
                 'user_params'       => $params,
                 'condition'         => $config_ldap->fields['condition'],
+                'user_dn'           => $params['user_dn'] ?? false,
             ];
 
             try {
                 $error = null;
                 $infos = self::searchUserDn($ds, $attribs, $error);
+
+                if (
+                    $error === true
+                    && ($params['identifier_field'] ?? null) === 'objectguid'
+                ) {
+                    unset(self::$conn_cache[$ldap_server]);
+                    $ds = $config_ldap->connect();
+                    if ($ds) {
+                        self::$conn_cache[$ldap_server] = $ds;
+                        $retry_attribs = $attribs;
+                        $retry_attribs['condition'] = '';
+                        $error = null;
+                        $infos = self::searchUserDn($ds, $retry_attribs, $error);
+                    }
+                }
 
                 if ($error === true) {
                     return false;
@@ -3450,7 +3520,7 @@ TWIG, $twig_params);
         $filter = "(" . $values['login_field'] . "=" . $filter_value . ")";
 
         if (!empty($values['condition'])) {
-            $filter = "(& $filter " . $values['condition'] . ")";
+            $filter = "(&" . $filter . $values['condition'] . ")";
         }
 
         $result = @ldap_search($ds, $values['basedn'], $filter, $attrs);
