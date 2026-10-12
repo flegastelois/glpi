@@ -285,6 +285,65 @@ class SearchTest extends DbTestCase
         );
     }
 
+    public function testSearchWithCriteriaIsPaginated(): void
+    {
+        $this->login();
+        $entity_id = $this->getTestRootEntity(only_id: true);
+
+        foreach ([1, 2, 3] as $i) {
+            $this->createItem(Computer::class, [
+                'name'        => __FUNCTION__ . ' ' . $i,
+                'entities_id' => $entity_id,
+            ]);
+        }
+
+        $list_limit = $_SESSION['glpilist_limit'];
+        $_SESSION['glpilist_limit'] = 2;
+        try {
+            $criteria = [
+                [
+                    'field'      => 1, // name
+                    'searchtype' => 'contains',
+                    'value'      => __FUNCTION__,
+                ],
+            ];
+
+            // First page: only the displayed rows are fetched, total is counted separately
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [1], 'order' => ['ASC']]);
+            $this->assertStringContainsString('LIMIT 0, 2', $data['sql']['search']);
+            $this->assertCount(1, $data['sql']['count']);
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertSame(
+                [__FUNCTION__ . ' 1', __FUNCTION__ . ' 2'],
+                array_map(static fn($row) => $row['Computer_1'][0]['name'], $data['data']['rows'])
+            );
+
+            // Second page
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 2, 'sort' => [1], 'order' => ['ASC']]);
+            $this->assertStringContainsString('LIMIT 2, 2', $data['sql']['search']);
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertSame(
+                [__FUNCTION__ . ' 3'],
+                array_map(static fn($row) => $row['Computer_1'][0]['name'], $data['data']['rows'])
+            );
+
+            // Out of range page falls back to the first one
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 10, 'sort' => [1], 'order' => ['ASC']]);
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertSame(
+                [__FUNCTION__ . ' 1', __FUNCTION__ . ' 2'],
+                array_map(static fn($row) => $row['Computer_1'][0]['name'], $data['data']['rows'])
+            );
+
+            // Complete export still fetches every row
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'export_all' => 1]);
+            $this->assertStringNotContainsString('LIMIT', $data['sql']['search']);
+            $this->assertCount(3, $data['data']['rows']);
+        } finally {
+            $_SESSION['glpilist_limit'] = $list_limit;
+        }
+    }
+
     public function testNestedMetaCriteria(): void
     {
         $this->login();
@@ -4067,8 +4126,10 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_authldaps`.`port` IS NULL OR `glpi_authldaps`.`port` = '')",
                 'expected_and_not'  => "(`glpi_authldaps`.`port` IS NOT NULL AND `glpi_authldaps`.`port` <> '')",
             ];
-            // log for both AND and AND NOT cases
+            // log for both AND and AND NOT cases, for both search and count requests
             if ($is_mariadb) {
+                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
+                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             }
@@ -4081,8 +4142,10 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_authldaps`.`timeout` IS NULL OR `glpi_authldaps`.`timeout` = '')",
                 'expected_and_not'  => "(`glpi_authldaps`.`timeout` IS NOT NULL AND `glpi_authldaps`.`timeout` <> '')",
             ];
-            // log for both AND and AND NOT cases
+            // log for both AND and AND NOT cases, for both search and count requests
             if ($is_mariadb) {
+                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
+                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             }
@@ -4104,7 +4167,9 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_budgets`.`value` IS NULL OR `glpi_budgets`.`value` = '')",
                 'expected_and_not'  => "(`glpi_budgets`.`value` IS NOT NULL AND `glpi_budgets`.`value` <> '')",
             ];
-            // log for both AND and AND NOT cases
+            // log for both AND and AND NOT cases, for both search and count requests
+            $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
+            $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
 
@@ -4157,8 +4222,10 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_crontasks`.`frequency` IS NULL OR `glpi_crontasks`.`frequency` = '')",
                 'expected_and_not'  => "(`glpi_crontasks`.`frequency` IS NOT NULL AND `glpi_crontasks`.`frequency` <> '')",
             ];
-            // log for both AND and AND NOT cases
+            // log for both AND and AND NOT cases, for both search and count requests
             if ($is_mariadb) {
+                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
+                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             }

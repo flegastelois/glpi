@@ -4336,6 +4336,7 @@ final class SQLProvider implements SearchProviderInterface
         $data['sql']['count']  = [];
         $data['sql']['search'] = '';
         $data['sql']['raw']    = [];
+        $data['search']['paginated_search'] = false;
 
         $searchopt        = SearchOption::getOptionsForItemtype($data['itemtype']);
 
@@ -4800,6 +4801,23 @@ final class SQLProvider implements SearchProviderInterface
                 $WHERE .= (!empty($WHERE) ? ' AND ' : ' WHERE ') . $system_criteria_sql;
             }
 
+            // Real search: also limit the request to the displayed page and count matching items
+            // with a dedicated request, instead of fetching the whole result set to count it
+            // (which exhausts memory on large tables).
+            // Not possible when a HAVING clause is used, as it relies on computed columns.
+            if (
+                !$data['search']['no_search']
+                && !$data['search']['export_all']
+                && !($data['search']['as_map'] ?? false)
+                && empty($HAVING)
+            ) {
+                $LIMIT = " LIMIT " . (int) $data['search']['start'] . ", " . (int) $data['search']['list_limit'];
+                $data['sql']['count'][] = "SELECT COUNT(DISTINCT `$itemtable`.`id`) AS cpt"
+                    . $FROM
+                    . $WHERE;
+                $data['search']['paginated_search'] = true;
+            }
+
             $data['sql']['raw'] = [
                 'SELECT' => $SELECT,
                 'FROM' => $FROM,
@@ -5153,9 +5171,10 @@ final class SQLProvider implements SearchProviderInterface
             }
 
             $data['data']['totalcount'] = 0;
-            // if real search or complete export : get numrows from request
+            $paginated_search = $data['search']['paginated_search'] ?? false;
+            // if real search (that could not be paginated) or complete export : get numrows from request
             if (
-                !$data['search']['no_search']
+                (!$data['search']['no_search'] && !$paginated_search)
                 || $data['search']['export_all']
             ) {
                 $data['data']['totalcount'] = $DBread->numrows($result);
@@ -5182,6 +5201,14 @@ final class SQLProvider implements SearchProviderInterface
 
             if ($data['search']['start'] > $data['data']['totalcount']) {
                 $data['search']['start'] = 0;
+                if ($paginated_search) {
+                    // Requested page is out of range: fetch the first one instead
+                    $raw = $data['sql']['raw'];
+                    $result = $DBread->doQuery(
+                        $raw['SELECT'] . $raw['FROM'] . $raw['WHERE'] . $raw['GROUPBY'] . $raw['HAVING'] . $raw['ORDER']
+                        . " LIMIT 0, " . (int) $data['search']['list_limit']
+                    );
+                }
             }
 
             // Search case
@@ -5195,8 +5222,8 @@ final class SQLProvider implements SearchProviderInterface
                 $data['data']['end'] = $data['data']['totalcount'] - 1;
             }
 
-            // No search Case
-            if ($data['search']['no_search']) {
+            // No search / paginated search case: result only contains the displayed page
+            if ($data['search']['no_search'] || $paginated_search) {
                 $data['data']['begin'] = 0;
                 $data['data']['end']   = min(
                     $data['data']['totalcount'] - $data['search']['start'],
@@ -5303,7 +5330,7 @@ final class SQLProvider implements SearchProviderInterface
             // Get rows
 
             // if real search seek to begin of items to display (because of complete search)
-            if (!$data['search']['no_search']) {
+            if (!$data['search']['no_search'] && !$paginated_search) {
                 $DBread->dataSeek($result, $data['search']['start']);
             }
 
