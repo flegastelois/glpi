@@ -4336,6 +4336,7 @@ final class SQLProvider implements SearchProviderInterface
         $data['sql']['count']  = [];
         $data['sql']['search'] = '';
         $data['sql']['raw']    = [];
+        $data['sql']['first_page'] = null;
         $data['search']['paginated_search'] = false;
 
         $searchopt        = SearchOption::getOptionsForItemtype($data['itemtype']);
@@ -4801,6 +4802,16 @@ final class SQLProvider implements SearchProviderInterface
                 $WHERE .= (!empty($WHERE) ? ' AND ' : ' WHERE ') . $system_criteria_sql;
             }
 
+            // When criteria only involve columns of the main table, the joins added to display
+            // the other columns change neither the matching items nor their count.
+            $main_table_criteria = empty($HAVING)
+                && !$data['search']['all_search']
+                && !$data['search']['view_search']
+                && count($data['search']['metacriteria']) === 0
+                && !self::hasMetaCriteria($data['search']['criteria'])
+                && self::areMainTableOptions($data['itemtype'], self::getCriteriaFields($data['search']['criteria']), $searchopt, $itemtable);
+            $MAIN_FROM = $main_table_criteria ? self::buildFrom($itemtable) . $COMMONLEFTJOIN : $FROM;
+
             // Real search: also limit the request to the displayed page and count matching items
             // with a dedicated request, instead of fetching the whole result set to count it
             // (which exhausts memory on large tables).
@@ -4813,9 +4824,44 @@ final class SQLProvider implements SearchProviderInterface
             ) {
                 $LIMIT = " LIMIT " . (int) $data['search']['start'] . ", " . (int) $data['search']['list_limit'];
                 $data['sql']['count'][] = "SELECT COUNT(DISTINCT `$itemtable`.`id`) AS cpt"
-                    . $FROM
+                    . $MAIN_FROM
                     . $WHERE;
                 $data['search']['paginated_search'] = true;
+            }
+
+            // Deferred join: select the ids of the displayed page on the main table only (which can
+            // use its indexes), then compute the displayed columns for these items only.
+            // Otherwise, every matching item is joined, grouped and sorted before the LIMIT applies.
+            $build_query = static fn(string $where, string $limit): string => $SELECT
+                . $FROM
+                . $where
+                . $GROUPBY
+                . $HAVING
+                . $ORDER
+                . $limit;
+            $sort_options = array_column($sort_fields, 'searchopt_id');
+            if (
+                $LIMIT !== ''
+                && $main_table_criteria
+                && !($data['search']['as_map'] ?? false)
+                && self::areMainTableOptions($data['itemtype'], $sort_options, $searchopt, $itemtable)
+            ) {
+                $page_ids_select = "SELECT DISTINCT `$itemtable`.`id` AS id";
+                foreach ($sort_options as $sort_option) {
+                    $page_ids_select .= ', ' . rtrim(trim(Search::addSelect($data['itemtype'], $sort_option)), ',');
+                }
+                $page_where = static fn(int $start): string => (!empty($WHERE) ? $WHERE . ' AND ' : ' WHERE ')
+                    . "`$itemtable`.`id` IN (SELECT `id` FROM ("
+                    . $page_ids_select . $MAIN_FROM . $WHERE . $ORDER
+                    . " LIMIT " . $start . ", " . (int) $data['search']['list_limit']
+                    . ") AS `page_ids`)";
+                $QUERY = $build_query($page_where((int) $data['search']['start']), '');
+                $data['sql']['first_page'] = $build_query($page_where(0), '');
+            } else {
+                $QUERY = $build_query($WHERE, $LIMIT);
+                if ($LIMIT !== '') {
+                    $data['sql']['first_page'] = $build_query($WHERE, " LIMIT 0, " . (int) $data['search']['list_limit']);
+                }
             }
 
             $data['sql']['raw'] = [
@@ -4827,13 +4873,6 @@ final class SQLProvider implements SearchProviderInterface
                 'ORDER' => $ORDER,
                 'LIMIT' => $LIMIT,
             ];
-            $QUERY = $SELECT
-                . $FROM
-                . $WHERE
-                . $GROUPBY
-                . $HAVING
-                . $ORDER
-                . $LIMIT;
         }
         $data['sql']['search'] = $QUERY;
         Profiler::getInstance()->stop('SQLProvider::constructSQL');
@@ -5201,13 +5240,9 @@ final class SQLProvider implements SearchProviderInterface
 
             if ($data['search']['start'] > $data['data']['totalcount']) {
                 $data['search']['start'] = 0;
-                if ($paginated_search) {
-                    // Requested page is out of range: fetch the first one instead
-                    $raw = $data['sql']['raw'];
-                    $result = $DBread->doQuery(
-                        $raw['SELECT'] . $raw['FROM'] . $raw['WHERE'] . $raw['GROUPBY'] . $raw['HAVING'] . $raw['ORDER']
-                        . " LIMIT 0, " . (int) $data['search']['list_limit']
-                    );
+                if (($data['sql']['first_page'] ?? null) !== null) {
+                    // Requested page is out of range of a paginated request: fetch the first one instead
+                    $result = $DBread->doQuery($data['sql']['first_page']);
                 }
             }
 
@@ -7220,5 +7255,88 @@ final class SQLProvider implements SearchProviderInterface
         }
 
         return $suffix;
+    }
+
+    /**
+     * Get the search option ids used by the given criteria, including in nested criteria groups.
+     *
+     * @param array<mixed> $criteria
+     * @return array<int|string>
+     */
+    private static function getCriteriaFields(array $criteria): array
+    {
+        $fields = [];
+        foreach ($criteria as $criterion) {
+            if (isset($criterion['criteria']) && is_array($criterion['criteria'])) {
+                array_push($fields, ...self::getCriteriaFields($criterion['criteria']));
+            } elseif (isset($criterion['field'])) {
+                $fields[] = $criterion['field'];
+            }
+        }
+        return $fields;
+    }
+
+    /**
+     * Check whether the given search options only rely on columns of the main table (no join,
+     * no aggregation), so that they can be used in a request on the main table only.
+     *
+     * @param class-string<CommonDBTM> $itemtype
+     * @param array<int|string> $options
+     * @param array<mixed> $searchopt
+     * @param string $itemtable
+     * @return bool
+     */
+    private static function areMainTableOptions(string $itemtype, array $options, array $searchopt, string $itemtable): bool
+    {
+        foreach ($options as $option) {
+            $opt = $searchopt[$option] ?? null;
+            if (
+                !is_array($opt)
+                || ($opt['table'] ?? null) !== $itemtable
+                || !empty($opt['forcegroupby'])
+                || !empty($opt['usehaving'])
+                || !empty($opt['computation'])
+                || !empty($opt['nosql'])
+            ) {
+                return false;
+            }
+            // Same table may still require a join (self link, translations...)
+            $already_link_tables = [$itemtable];
+            $join = Search::addLeftJoin(
+                $itemtype,
+                $itemtable,
+                $already_link_tables,
+                $opt['table'],
+                $opt['linkfield'] ?? '',
+                false,
+                '',
+                $opt['joinparams'] ?? [],
+                $opt['field'] ?? ''
+            );
+            if (trim($join) !== '') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Check whether the given criteria contain a meta criterion, including in nested criteria groups.
+     *
+     * @param array<mixed> $criteria
+     * @return bool
+     */
+    private static function hasMetaCriteria(array $criteria): bool
+    {
+        foreach ($criteria as $criterion) {
+            if (isset($criterion['meta']) && $criterion['meta']) {
+                return true;
+            }
+            if (isset($criterion['criteria']) && is_array($criterion['criteria']) && self::hasMetaCriteria($criterion['criteria'])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

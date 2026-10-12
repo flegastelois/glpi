@@ -311,6 +311,9 @@ class SearchTest extends DbTestCase
             // First page: only the displayed rows are fetched, total is counted separately
             $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [1], 'order' => ['ASC']]);
             $this->assertStringContainsString('LIMIT 0, 2', $data['sql']['search']);
+            // Criteria and sort only use main table columns: page ids are selected on the main table
+            $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
+            $this->assertStringNotContainsString('JOIN', $data['sql']['count'][0]);
             $this->assertCount(1, $data['sql']['count']);
             $this->assertSame(3, (int) $data['data']['totalcount']);
             $this->assertSame(
@@ -334,6 +337,13 @@ class SearchTest extends DbTestCase
                 [__FUNCTION__ . ' 1', __FUNCTION__ . ' 2'],
                 array_map(static fn($row) => $row['Computer_1'][0]['name'], $data['data']['rows'])
             );
+
+            // Sort on a joined column: no deferred join, but the request is still paginated
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [80], 'order' => ['ASC']]);
+            $this->assertStringNotContainsString('page_ids', $data['sql']['search']);
+            $this->assertStringContainsString('LIMIT 0, 2', $data['sql']['search']);
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertCount(2, $data['data']['rows']);
 
             // Complete export still fetches every row
             $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'export_all' => 1]);
