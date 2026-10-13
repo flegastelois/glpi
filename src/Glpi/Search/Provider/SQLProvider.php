@@ -4829,7 +4829,11 @@ final class SQLProvider implements SearchProviderInterface
                 && empty($HAVING)
             ) {
                 $LIMIT = " LIMIT " . (int) $data['search']['start'] . ", " . (int) $data['search']['list_limit'];
-                $data['sql']['count'][] = "SELECT COUNT(DISTINCT `$itemtable`.`id`) AS cpt"
+                // Without any join, each matching row is a distinct item: avoid costly DISTINCT
+                $count = $main_table_criteria && trim($COMMONLEFTJOIN) === ''
+                    ? "COUNT(*)"
+                    : "COUNT(DISTINCT `$itemtable`.`id`)";
+                $data['sql']['count'][] = "SELECT $count AS cpt"
                     . $MAIN_FROM
                     . $WHERE;
                 $data['search']['paginated_search'] = true;

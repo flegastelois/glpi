@@ -1045,6 +1045,15 @@ class Provider
             Ticket::getCriteriaFromProfile(),
             self::getFiltersCriteria($t_table, $params['apply_filters'])
         );
+
+        // avoid costly DISTINCT if there isn't any JOIN
+        if (!isset($criteria['LEFT JOIN'])
+            && !isset($criteria['JOIN'])
+            && !isset($criteria['INNER JOIN'])
+            && !isset($criteria['RIGHT JOIN'])) {
+            $criteria['SELECT']['COUNT'] = $criteria['SELECT']['COUNT DISTINCT'];
+            unset($criteria['SELECT']['COUNT DISTINCT']);
+        }
         Profiler::getInstance()->stop(__METHOD__ . ' build SQL criteria');
         $iterator = $DB->request($criteria);
 

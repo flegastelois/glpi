@@ -314,6 +314,7 @@ class SearchTest extends DbTestCase
             // Criteria and sort only use main table columns: page ids are selected on the main table
             $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
             $this->assertStringNotContainsString('JOIN', $data['sql']['count'][0]);
+            $this->assertStringContainsString('COUNT(*)', $data['sql']['count'][0]);
             $this->assertCount(1, $data['sql']['count']);
             $this->assertSame(3, (int) $data['data']['totalcount']);
             $this->assertSame(

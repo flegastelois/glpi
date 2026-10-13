@@ -4800,6 +4800,17 @@ JAVASCRIPT;
             $criteria = array_merge_recursive($criteria, self::getCriteriaFromProfile());
         }
 
+        // avoid costly DISTINCT if there isn't any JOIN
+        if (
+            !isset($criteria['LEFT JOIN'])
+            && !isset($criteria['JOIN'])
+            && !isset($criteria['INNER JOIN'])
+            && !isset($criteria['RIGHT JOIN'])
+        ) {
+            $criteria['SELECT']['COUNT'] = $criteria['SELECT']['COUNT DISTINCT'];
+            unset($criteria['SELECT']['COUNT DISTINCT']);
+        }
+
         return $criteria;
     }
 
