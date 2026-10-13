@@ -4804,12 +4804,18 @@ final class SQLProvider implements SearchProviderInterface
 
             // When criteria only involve columns of the main table, the joins added to display
             // the other columns change neither the matching items nor their count.
+            // Without any search value, criteria are not applied at all.
             $main_table_criteria = empty($HAVING)
-                && !$data['search']['all_search']
-                && !$data['search']['view_search']
-                && count($data['search']['metacriteria']) === 0
-                && !self::hasMetaCriteria($data['search']['criteria'])
-                && self::areMainTableOptions($data['itemtype'], self::getCriteriaFields($data['search']['criteria']), $searchopt, $itemtable);
+                && (
+                    $data['search']['no_search']
+                    || (
+                        !$data['search']['all_search']
+                        && !$data['search']['view_search']
+                        && count($data['search']['metacriteria']) === 0
+                        && !self::hasMetaCriteria($data['search']['criteria'])
+                        && self::areMainTableOptions($data['itemtype'], self::getCriteriaFields($data['search']['criteria']), $searchopt, $itemtable)
+                    )
+                );
             $MAIN_FROM = $main_table_criteria ? self::buildFrom($itemtable) . $COMMONLEFTJOIN : $FROM;
 
             // Real search: also limit the request to the displayed page and count matching items

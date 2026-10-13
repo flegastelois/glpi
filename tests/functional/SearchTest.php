@@ -345,6 +345,14 @@ class SearchTest extends DbTestCase
             $this->assertSame(3, (int) $data['data']['totalcount']);
             $this->assertCount(2, $data['data']['rows']);
 
+            // Without any search value, page ids are also selected on the main table
+            $data = $this->doSearch(Computer::class, ['start' => 0, 'sort' => [1], 'order' => ['ASC']]);
+            $this->assertTrue($data['search']['no_search']);
+            $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
+            $this->assertStringContainsString('LIMIT 0, 2', $data['sql']['search']);
+            $this->assertGreaterThanOrEqual(3, (int) $data['data']['totalcount']);
+            $this->assertCount(2, $data['data']['rows']);
+
             // Complete export still fetches every row
             $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'export_all' => 1]);
             $this->assertStringNotContainsString('LIMIT', $data['sql']['search']);
