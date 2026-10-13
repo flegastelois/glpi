@@ -363,6 +363,41 @@ class SearchTest extends DbTestCase
         }
     }
 
+    public function testPaginatedSearchSortedOnEachMainTableOption(): void
+    {
+        $this->login();
+
+        $this->createItem(Ticket::class, [
+            'name'        => __FUNCTION__,
+            'content'     => __FUNCTION__,
+            'entities_id' => $this->getTestRootEntity(only_id: true),
+        ]);
+
+        $criteria = [
+            [
+                'field'      => 12, // status
+                'searchtype' => 'equals',
+                'value'      => 'all',
+            ],
+        ];
+        $deferred_count = 0;
+        foreach (SearchOption::getOptionsForItemtype(Ticket::class) as $id => $option) {
+            if (!is_int($id) || ($option['table'] ?? null) !== Ticket::getTable() || ($option['nosort'] ?? false)) {
+                continue;
+            }
+            $data = $this->doSearch(Ticket::class, ['criteria' => $criteria, 'sort' => [$id], 'order' => ['ASC']]);
+            $this->assertGreaterThanOrEqual(1, (int) $data['data']['totalcount'], "Sort on option $id");
+            $this->assertNotEmpty($data['data']['rows'], "Sort on option $id");
+            if (str_contains($data['sql']['search'], 'page_ids')) {
+                $deferred_count++;
+            }
+        }
+        // Sort on the title (which selects the same column twice) uses the deferred join
+        $this->assertGreaterThan(0, $deferred_count);
+        $data = $this->doSearch(Ticket::class, ['criteria' => $criteria, 'sort' => [1], 'order' => ['ASC']]);
+        $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
+    }
+
     public function testNestedMetaCriteria(): void
     {
         $this->login();

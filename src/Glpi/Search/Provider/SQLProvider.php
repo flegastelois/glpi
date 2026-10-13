@@ -4856,10 +4856,18 @@ final class SQLProvider implements SearchProviderInterface
                 && !($data['search']['as_map'] ?? false)
                 && self::areMainTableOptions($data['itemtype'], $sort_options, $searchopt, $itemtable)
             ) {
-                $page_ids_select = "SELECT DISTINCT `$itemtable`.`id` AS id";
+                // A derived table cannot contain duplicated column names, whereas some search options
+                // select the same aliased column twice.
+                $page_ids_columns = ['id' => "`$itemtable`.`id` AS id"];
                 foreach ($sort_options as $sort_option) {
-                    $page_ids_select .= ', ' . rtrim(trim(Search::addSelect($data['itemtype'], $sort_option)), ',');
+                    $sort_columns = self::getSelectCriteria($data['itemtype'], (int) $sort_option);
+                    foreach (is_array($sort_columns) ? $sort_columns : [$sort_columns] as $column) {
+                        $column = trim($column instanceof QueryExpression ? $column->getValue() : (string) $column);
+                        $alias = preg_match('/\sAS\s+`?([^`\s]+)`?$/i', $column, $matches) ? $matches[1] : $column;
+                        $page_ids_columns[$alias] ??= $column;
+                    }
                 }
+                $page_ids_select = "SELECT DISTINCT " . implode(', ', $page_ids_columns);
                 $page_where = static fn(int $start): string => (!empty($WHERE) ? $WHERE . ' AND ' : ' WHERE ')
                     . "`$itemtable`.`id` IN (SELECT `id` FROM ("
                     . $page_ids_select . $MAIN_FROM . $WHERE . $ORDER
