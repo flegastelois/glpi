@@ -6,6 +6,7 @@ The present file will list all changes made to the project; according to the
 ## [13.0.0] unreleased
 
 ### Added
+- Pending end date: an ITIL object can be set as pending until a given date. When the date is reached, a private followup is added and the object returns to the status it had before being set as pending.
 
 ### Changes
 
