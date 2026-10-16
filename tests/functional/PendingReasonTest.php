@@ -2090,4 +2090,166 @@ class PendingReasonTest extends DbTestCase
             $_SESSION['MESSAGE_AFTER_REDIRECT'] = [];
         }
     }
+
+    public static function endPendingPeriodProvider(): iterable
+    {
+        yield [Ticket::class, CommonITILObject::ASSIGNED];
+        yield [Change::class, Change::EVALUATION];
+        yield [Problem::class, CommonITILObject::OBSERVED];
+    }
+
+    #[DataProvider('endPendingPeriodProvider')]
+    public function testCronEndsPendingPeriod(string $itemtype, int $status): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $system_user = (int) Config::getConfigurationValue('core', 'system_user');
+
+        $item = $this->createItem($itemtype, [
+            'name'                => __FUNCTION__,
+            'content'             => __FUNCTION__,
+            'status'              => $status,
+            '_users_id_requester' => getItemByTypeName('User', 'post-only', true),
+            '_users_id_assign'    => getItemByTypeName('User', TU_USER, true),
+            'entities_id'         => getItemByTypeName('Entity', '_test_root_entity', true),
+        ]);
+        $this->createItem(ITILFollowup::class, [
+            'itemtype'      => $itemtype,
+            'items_id'      => $item->getID(),
+            'content'       => 'wait',
+            'pending'       => 1,
+            'pending_until' => '2027-01-08 08:00:00',
+        ], ['pending', 'pending_until']);
+
+        // Before the end date: nothing happens
+        $_SESSION['glpi_currenttime'] = '2027-01-08 07:59:59';
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+        $this->assertTrue($item->getFromDB($item->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $item->fields['status']);
+        $this->assertNotFalse(PendingReason_Item::getForItem($item));
+
+        // After the end date: followup added, status restored, pending data removed
+        $_SESSION['glpi_currenttime'] = '2027-01-08 08:30:00';
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+        $this->assertTrue($item->getFromDB($item->getID()));
+        $this->assertEquals($status, $item->fields['status']);
+        $this->assertFalse(PendingReason_Item::getForItem($item));
+
+        $followups = getAllDataFromTable(ITILFollowup::getTable(), [
+            'itemtype' => $itemtype,
+            'items_id' => $item->getID(),
+            'users_id' => $system_user,
+        ]);
+        $this->assertCount(1, $followups);
+        $followup = array_pop($followups);
+        $this->assertEquals(1, $followup['is_private']);
+        $this->assertStringContainsString(
+            htmlescape(sprintf(
+                __('End of the pending period scheduled on %s.'),
+                \Html::convDateTime('2027-01-08 08:00:00')
+            )),
+            $followup['content']
+        );
+
+        // Next run does nothing more
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+        $this->assertCount(1, getAllDataFromTable(ITILFollowup::getTable(), [
+            'itemtype' => $itemtype,
+            'items_id' => $item->getID(),
+            'users_id' => $system_user,
+        ]));
+    }
+
+    public function testCronEndPendingFallsBackToAssigned(): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $ticket = $this->createItem(Ticket::class, [
+            'name'             => __FUNCTION__,
+            'content'          => __FUNCTION__,
+            '_users_id_assign' => getItemByTypeName('User', TU_USER, true),
+            'entities_id'      => getItemByTypeName('Entity', '_test_root_entity', true),
+        ]);
+        $this->assertTrue($ticket->update(['id' => $ticket->getID(), 'status' => CommonITILObject::WAITING]));
+        $this->assertTrue(PendingReason_Item::createForItem($ticket, [
+            'pendingreasons_id' => 0,
+            'previous_status'   => CommonITILObject::WAITING,
+            'pending_until'     => '2027-01-08 08:00:00',
+        ]));
+
+        $_SESSION['glpi_currenttime'] = '2027-01-08 09:00:00';
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+
+        $this->assertTrue($ticket->getFromDB($ticket->getID()));
+        $this->assertEquals(CommonITILObject::ASSIGNED, $ticket->fields['status']);
+    }
+
+    public function testCronDoesNotAutoResolveWhenPendingUntilIsSet(): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $solution_template = $this->createItem(SolutionTemplate::class, [
+            'name'    => __FUNCTION__,
+            'content' => 'auto solved',
+        ]);
+        $pending_reason = $this->createItem(PendingReason::class, [
+            'name'                        => __FUNCTION__,
+            'entities_id'                 => getItemByTypeName('Entity', '_test_root_entity', true),
+            'followup_frequency'          => HOUR_TIMESTAMP,
+            'followups_before_resolution' => -1,
+            'solutiontemplates_id'        => $solution_template->getID(),
+        ]);
+        $ticket = $this->createAssignedTicketForPendingUntil();
+        $this->createItem(ITILFollowup::class, [
+            'itemtype'                    => Ticket::class,
+            'items_id'                    => $ticket->getID(),
+            'content'                     => 'wait',
+            'pending'                     => 1,
+            'pendingreasons_id'           => $pending_reason->getID(),
+            'followup_frequency'          => HOUR_TIMESTAMP,
+            'followups_before_resolution' => -1,
+            'pending_until'               => '2027-02-01 08:00:00',
+        ], ['pending', 'pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until']);
+
+        // Auto-resolution would be due after one hour, end date is far away
+        $_SESSION['glpi_currenttime'] = '2027-01-02 10:00:00';
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+
+        $this->assertTrue($ticket->getFromDB($ticket->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $ticket->fields['status']);
+        $this->assertCount(0, getAllDataFromTable(\ITILSolution::getTable(), [
+            'itemtype' => Ticket::class,
+            'items_id' => $ticket->getID(),
+        ]));
+    }
+
+    public function testCronDoesNothingWhenPendingEndedManually(): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $system_user = (int) Config::getConfigurationValue('core', 'system_user');
+        $ticket = $this->createAssignedTicketForPendingUntil();
+
+        $followup = $this->createItem(ITILFollowup::class, [
+            'itemtype'      => Ticket::class,
+            'items_id'      => $ticket->getID(),
+            'content'       => 'wait',
+            'pending'       => 1,
+            'pending_until' => '2027-01-08 08:00:00',
+        ], ['pending', 'pending_until']);
+        $this->assertTrue($followup->update([
+            'id'      => $followup->getID(),
+            'content' => 'wait',
+            'pending' => 0,
+        ]));
+
+        $_SESSION['glpi_currenttime'] = '2027-01-08 09:00:00';
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+
+        $this->assertCount(0, getAllDataFromTable(ITILFollowup::getTable(), [
+            'itemtype' => Ticket::class,
+            'items_id' => $ticket->getID(),
+            'users_id' => $system_user,
+        ]));
+    }
 }

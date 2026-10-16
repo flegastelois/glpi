@@ -47,7 +47,7 @@ class PendingReasonCron extends CommonDBTM
      */
     public static function getTaskDescription(): string
     {
-        return __("Send automated follow-ups on pending tickets and solve them if necessary");
+        return __("Send automated follow-ups on pending tickets, solve them if necessary and end pending periods that reached their end date");
     }
 
     /**
@@ -98,8 +98,11 @@ class PendingReasonCron extends CommonDBTM
             'SELECT' => 'id',
             'FROM'   => PendingReason_Item::getTable(),
             'WHERE'  => [
-                'pendingreasons_id'  => ['>', 0],
-                'itemtype'           => $targets,
+                'itemtype' => $targets,
+                'OR'       => [
+                    'pendingreasons_id' => ['>', 0],
+                    'NOT'               => ['pending_until' => null],
+                ],
             ],
         ]);
 
@@ -114,6 +117,19 @@ class PendingReasonCron extends CommonDBTM
 
             if ($item->fields['status'] != CommonITILObject::WAITING) {
                 PendingReason_Item::deleteForItem($item);
+                continue;
+            }
+
+            $pending_until = $pending_item->getPendingUntilDate();
+            if ($pending_until !== null && $now >= $pending_until) {
+                if (self::endPendingPeriod($item, $pending_item, (int) $config['system_user'])) {
+                    $task->addVolume(1);
+                }
+                continue;
+            }
+
+            // End date only, without pending reason: no automatic followup nor resolution
+            if ((int) $pending_item->fields['pendingreasons_id'] === 0) {
                 continue;
             }
 
@@ -193,8 +209,69 @@ class PendingReasonCron extends CommonDBTM
         return 1;
     }
 
+    /**
+     * End the pending period of an ITIL object whose end date is reached:
+     * add a private followup and restore the status it had before being set as pending.
+     *
+     * @param CommonITILObject   $item
+     * @param PendingReason_Item $pending_item
+     * @param int                $system_user_id
+     *
+     * @return bool
+     */
+    private static function endPendingPeriod(
+        CommonITILObject $item,
+        PendingReason_Item $pending_item,
+        int $system_user_id
+    ): bool {
+        $followup = new ITILFollowup();
+        $followup_added = $followup->add([
+            'itemtype'                        => $item::class,
+            'items_id'                        => $item->getID(),
+            'users_id'                        => $system_user_id,
+            'is_private'                      => 1,
+            'content'                         => '<p>' . htmlescape(sprintf(
+                __('End of the pending period scheduled on %s.'),
+                Html::convDateTime($pending_item->fields['pending_until'])
+            )) . '</p>',
+            // Status is restored below, do not let the followup compute it
+            '_no_reopen'                      => true,
+            '_do_not_compute_takeintoaccount' => true,
+        ]);
+        if (!$followup_added) {
+            trigger_error("Failed to add end of pending period followup", E_USER_WARNING);
+            return false;
+        }
+
+        $status = (int) $pending_item->fields['previous_status'];
+        if (
+            $status === 0
+            || $status === CommonITILObject::WAITING
+            || !$item::isStatusExists($status)
+        ) {
+            $status = $item::isStatusExists(CommonITILObject::ASSIGNED)
+                ? CommonITILObject::ASSIGNED
+                : CommonITILObject::INCOMING;
+        }
+
+        $updated = $item->update([
+            'id'            => $item->getID(),
+            'status'        => $status,
+            '_disablenotif' => true,
+        ]);
+        if (!$updated) {
+            trigger_error("Failed to restore status after end of pending period", E_USER_WARNING);
+            return false;
+        }
+
+        // Leaving WAITING status already removes pending data, make sure nothing remains
+        PendingReason_Item::deleteForItem($item);
+
+        return true;
+    }
+
     public static function getTypeName($nb = 0)
     {
-        return __('Automatic followups / resolution');
+        return __('Automatic followups / resolution / end of pending');
     }
 }
