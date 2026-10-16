@@ -40,7 +40,7 @@
    {% set pendingreasons_id = pending_item.fields['pendingreasons_id'] ?? pending_item_parent.fields['pendingreasons_id'] ?? default_pending.fields['id'] ?? 0 %}
 
    <div class="row">
-      <div class="col-12 col-sm-4" title="{{ "PendingReason"|itemtype_name }}"
+      <div class="col-12 col-sm" style="min-width: 10rem;" title="{{ "PendingReason"|itemtype_name }}"
            data-bs-toggle="tooltip" data-bs-placement="top">
          {% set pendingreasons_lbl %}
             <i class="ti ti-tags" aria-hidden="true"></i>
@@ -116,7 +116,7 @@
          </script>
       </div>
 
-      <div class="col-12 col-sm-auto" style="min-width: 11rem;">
+      <div class="col-12 col-sm" style="min-width: 11rem;">
          {% set pending_until_value = pending_item ? pending_item.fields['pending_until'] : (pending_item_parent ? pending_item_parent.fields['pending_until'] : null) %}
          {% set pending_until_field = inputs.datetime('pending_until', pending_until_value, {
             'rand': rand,
@@ -140,7 +140,7 @@
          ) }}
       </div>
 
-      <div class="collapse col-12 col-sm {{ pendingreasons_id ? "show" : "" }}" id="pending-reasons-more_options_{{ rand }}">
+      <div class="collapse col-12 {{ pendingreasons_id ? "show" : "" }}" id="pending-reasons-more_options_{{ rand }}">
          <div class="row">
             <div class="col-12 col-sm-6" title="{{ __('Automatic follow-up') }}"
                   data-bs-toggle="tooltip" data-bs-placement="top">
