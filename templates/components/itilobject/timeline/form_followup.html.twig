@@ -219,7 +219,7 @@
                   {% if get_current_interface() == 'central' and item.isAllowedStatus(item.fields['status'], constant('CommonITILObject::WAITING')) and call('PendingReason_Item::canDisplayPendingReasonForItem', [subitem]) %}
                      <span
                         class="input-group-text bg-yellow-lt py-0 pe-0 {{ show_pending_reasons_actions ? 'flex-fill' : '' }}"
-                        id="pending-reasons-control-{{ rand }}"
+                        id="pending-reasons-control-{{ rand }}" style="min-width: 0;"
                      >
                         <span class="d-inline-flex align-items-center" title="{{ __("Set the status to pending") }}"
                               data-bs-toggle="tooltip" data-bs-placement="top" role="button">
@@ -238,7 +238,7 @@
                         <div
                            class="collapse ps-2 py-1 flex-fill {{ show_pending_reasons_actions ? 'show' : '' }}"
                            aria-expanded="{{ show_pending_reasons_actions ? 'true' : 'false' }}"
-                           id="pending-reasons-setup-{{ rand }}"
+                           id="pending-reasons-setup-{{ rand }}" style="min-width: 0;"
                         >
                            {{ include('components/itilobject/timeline/pending_reasons.html.twig') }}
                         </div>
