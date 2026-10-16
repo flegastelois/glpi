@@ -14558,12 +14558,6 @@ $ignoreErrors[] = [
 	'path' => __DIR__ . '/src/PendingReason_Item.php',
 ];
 $ignoreErrors[] = [
-	'message' => '#^Offset \'pendingreasons_id\' might not exist on array\\{pendingreasons_id\\?\\: mixed, followup_frequency\\?\\: mixed, followups_before_resolution\\?\\: mixed, last_bump_date\\?\\: mixed\\}\\.$#',
-	'identifier' => 'offsetAccess.notFound',
-	'count' => 1,
-	'path' => __DIR__ . '/src/PendingReason_Item.php',
-];
-$ignoreErrors[] = [
 	'message' => '#^Cannot access property \\$fields on Agent\\|null\\.$#',
 	'identifier' => 'property.nonObject',
 	'count' => 4,

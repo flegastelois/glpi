@@ -277,10 +277,10 @@ class PendingReason_Item extends CommonDBRelation
     /**
      * Normalize and validate the "pending_until" value of a timeline item input
      *
-     * @param array       $input         timeline item input
-     * @param string|null $current_value currently stored value, a past date equal to it is accepted
+     * @param array<string, mixed> $input         timeline item input
+     * @param string|null          $current_value currently stored value, a past date equal to it is accepted
      *
-     * @return array|false input, or false if the value is invalid
+     * @return array<string, mixed>|false input, or false if the value is invalid
      */
     public static function preparePendingUntilInput(array $input, ?string $current_value = null): array|false
     {
@@ -585,8 +585,8 @@ class PendingReason_Item extends CommonDBRelation
                 if (isset($timeline_item->input['followups_before_resolution'])) {
                     $pending_updates['followups_before_resolution'] = $timeline_item->input['followups_before_resolution'];
                 }
-                if (array_key_exists('pending_until', $timeline_item->input)) {
-                    $pending_updates['pending_until'] = $timeline_item->input['pending_until'];
+                if (array_key_exists('pending_until', (array) $timeline_item->input)) {
+                    $pending_updates['pending_until'] = $timeline_item->input['pending_until'] ?? null;
                 }
 
                 if (count($pending_updates) > 0) {
