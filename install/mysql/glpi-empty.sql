@@ -9647,12 +9647,14 @@ CREATE TABLE `glpi_pendingreasons_items` (
   `bump_count` int NOT NULL DEFAULT '0',
   `last_bump_date` timestamp NULL DEFAULT NULL,
   `previous_status` int DEFAULT NULL,
+  `pending_until` timestamp NULL DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
   `date_mod` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `unicity` (`items_id`,`itemtype`),
   KEY `pendingreasons_id` (`pendingreasons_id`),
   KEY `item` (`itemtype`,`items_id`),
+  KEY `pending_until` (`pending_until`),
   KEY `date_creation` (`date_creation`),
   KEY `date_mod` (`date_mod`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;

@@ -228,6 +228,11 @@ class PendingReason_Item extends CommonDBRelation
      */
     public function getAutoResolvedate()
     {
+        // An explicit end date replaces automatic resolution
+        if ($this->getPendingUntilDate() !== null) {
+            return false;
+        }
+
         if (empty($this->fields['followup_frequency']) || empty($this->fields['followups_before_resolution'])) {
             return false;
         }
@@ -255,6 +260,57 @@ class PendingReason_Item extends CommonDBRelation
         ));
 
         return $lastBumpDate->format('Y-m-d H:i:s');
+    }
+
+    /**
+     * Get the date at which the pending period ends
+     *
+     * @return string|null date (Y-m-d H:i:s) or null if no end date is set
+     */
+    public function getPendingUntilDate(): ?string
+    {
+        $pending_until = $this->fields['pending_until'] ?? null;
+
+        return empty($pending_until) ? null : $pending_until;
+    }
+
+    /**
+     * Normalize and validate the "pending_until" value of a timeline item input
+     *
+     * @param array       $input         timeline item input
+     * @param string|null $current_value currently stored value, a past date equal to it is accepted
+     *
+     * @return array|false input, or false if the value is invalid
+     */
+    public static function preparePendingUntilInput(array $input, ?string $current_value = null): array|false
+    {
+        if (!array_key_exists('pending_until', $input)) {
+            return $input;
+        }
+
+        $value = $input['pending_until'];
+        if ($value === null || $value === '' || $value === 'NULL') {
+            $input['pending_until'] = null;
+            return $input;
+        }
+
+        try {
+            $input['pending_until'] = (new DateTime((string) $value))->format('Y-m-d H:i:s');
+        } catch (Throwable) {
+            Session::addMessageAfterRedirect(__s('Invalid pending end date.'), false, ERROR);
+            return false;
+        }
+
+        if (
+            ($input['pending'] ?? 0)
+            && $input['pending_until'] !== $current_value
+            && $input['pending_until'] <= $_SESSION['glpi_currenttime']
+        ) {
+            Session::addMessageAfterRedirect(__s('The pending end date must be in the future.'), false, ERROR);
+            return false;
+        }
+
+        return $input;
     }
 
     /**

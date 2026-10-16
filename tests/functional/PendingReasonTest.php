@@ -1788,4 +1788,70 @@ class PendingReasonTest extends DbTestCase
         $this->assertTrue($warning_found, 'Expected warning about missing pending reason not found');
     }
 
+    public function testGetPendingUntilDate(): void
+    {
+        $this->login();
+        $ticket = $this->createItem(Ticket::class, [
+            'name'        => __FUNCTION__,
+            'content'     => __FUNCTION__,
+            'entities_id' => getItemByTypeName('Entity', '_test_root_entity', true),
+            'status'      => CommonITILObject::WAITING,
+        ]);
+
+        $this->assertTrue(PendingReason_Item::createForItem($ticket, ['pendingreasons_id' => 0]));
+        $this->assertNull(PendingReason_Item::getForItem($ticket)->getPendingUntilDate());
+
+        $this->assertTrue(PendingReason_Item::updateForItem($ticket, ['pending_until' => '2027-01-08 08:00:00']));
+        $this->assertEquals('2027-01-08 08:00:00', PendingReason_Item::getForItem($ticket)->getPendingUntilDate());
+    }
+
+    public function testAutoResolveDateIsDisabledByPendingUntil(): void
+    {
+        $this->login();
+        $ticket = $this->createItem(Ticket::class, [
+            'name'        => __FUNCTION__,
+            'content'     => __FUNCTION__,
+            'entities_id' => getItemByTypeName('Entity', '_test_root_entity', true),
+            'status'      => CommonITILObject::WAITING,
+        ]);
+        $pending_reason = getItemByTypeName(PendingReason::class, 'needupdate_pendingreason');
+
+        $this->assertTrue(PendingReason_Item::createForItem($ticket, [
+            'pendingreasons_id'           => $pending_reason->getID(),
+            'followup_frequency'          => HOUR_TIMESTAMP,
+            'followups_before_resolution' => -1,
+            'last_bump_date'              => '2027-01-01 00:00:00',
+        ]));
+        $this->assertNotFalse(PendingReason_Item::getForItem($ticket)->getAutoResolvedate());
+
+        $this->assertTrue(PendingReason_Item::updateForItem($ticket, ['pending_until' => '2027-01-08 08:00:00']));
+        $this->assertFalse(PendingReason_Item::getForItem($ticket)->getAutoResolvedate());
+    }
+
+    public static function preparePendingUntilInputProvider(): iterable
+    {
+        // now = 2027-01-01 10:00:00
+        yield 'key absent' => [['pending' => 1], null, ['pending' => 1]];
+        yield 'empty string' => [['pending' => 1, 'pending_until' => ''], null, ['pending' => 1, 'pending_until' => null]];
+        yield 'NULL string' => [['pending' => 1, 'pending_until' => 'NULL'], null, ['pending' => 1, 'pending_until' => null]];
+        yield 'future, no seconds' => [['pending' => 1, 'pending_until' => '2027-01-08 08:00'], null, ['pending' => 1, 'pending_until' => '2027-01-08 08:00:00']];
+        yield 'past, pending' => [['pending' => 1, 'pending_until' => '2026-12-31 08:00'], null, false];
+        yield 'now, pending' => [['pending' => 1, 'pending_until' => '2027-01-01 10:00:00'], null, false];
+        yield 'past, not pending' => [['pending' => 0, 'pending_until' => '2026-12-31 08:00:00'], null, ['pending' => 0, 'pending_until' => '2026-12-31 08:00:00']];
+        yield 'past, unchanged' => [['pending' => 1, 'pending_until' => '2026-12-31 08:00'], '2026-12-31 08:00:00', ['pending' => 1, 'pending_until' => '2026-12-31 08:00:00']];
+        yield 'garbage' => [['pending' => 1, 'pending_until' => 'not a date'], null, false];
+    }
+
+    #[DataProvider('preparePendingUntilInputProvider')]
+    public function testPreparePendingUntilInput(array $input, ?string $current_value, array|false $expected): void
+    {
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+
+        $this->assertSame($expected, PendingReason_Item::preparePendingUntilInput($input, $current_value));
+
+        if ($expected === false) {
+            $this->assertNotEmpty($_SESSION['MESSAGE_AFTER_REDIRECT'][ERROR] ?? []);
+            $_SESSION['MESSAGE_AFTER_REDIRECT'] = [];
+        }
+    }
 }
