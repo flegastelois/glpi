@@ -74,10 +74,10 @@
 
         {% if pending_until %}
             <span class="ms-2" data-testid="pending-until-badge"
-                  title="{{ __('Pending until %s')|format(pending_until|formatted_date) }}" data-bs-toggle="tooltip">
+                  title="{{ __('Pending until %s')|format(pending_until|formatted_datetime) }}" data-bs-toggle="tooltip">
                 <i class="ti ti-calendar-pause me-1" aria-hidden="true"></i>
                 <span class="visually-hidden">{{ __('Pending until') }}</span>
-                {{ pending_until|formatted_date }}
+                {{ pending_until|formatted_datetime }}
             </span>
         {% endif %}
 

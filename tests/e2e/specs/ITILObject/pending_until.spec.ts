@@ -71,13 +71,16 @@ test('displays the pending end date in the timeline', async ({ profile, page, ap
         items_id: ticket_id,
         content: 'Waiting for the subscription start date',
         pending: 1,
-        pending_until: '2099-01-08 08:00:00',
+        pending_until: '2037-12-31 14:30:00',
     });
 
     const ticket = new TicketPage(page);
     await ticket.goto(ticket_id);
 
-    await expect(page.getByTestId('pending-until-badge').first()).toContainText('Pending until');
+    const badge = page.getByTestId('pending-until-badge').first();
+    await expect(badge).toContainText('Pending until');
+    // Date and time, in the default date format (YYYY-MM-DD)
+    await expect(badge).toContainText('2037-12-31 14:30');
 });
 
 test('pre-fills the pending end date of a new followup from the pending ticket', async ({ profile, page, api }) => {
@@ -93,7 +96,7 @@ test('pre-fills the pending end date of a new followup from the pending ticket',
         items_id: ticket_id,
         content: 'Waiting for the subscription start date',
         pending: 1,
-        pending_until: '2099-01-08 08:00:00',
+        pending_until: '2037-12-31 14:30:00',
     });
 
     const ticket = new TicketPage(page);
@@ -101,5 +104,5 @@ test('pre-fills the pending end date of a new followup from the pending ticket',
     await ticket.getButton('Answer').click();
 
     const followup_block = page.getByTestId('new-ITILFollowup-block');
-    await expect(followup_block.getByLabel('Pending until')).toHaveValue(/2099-01-08/);
+    await expect(followup_block.getByLabel('Pending until')).toHaveValue(/2037-12-31/);
 });
