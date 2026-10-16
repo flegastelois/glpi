@@ -521,7 +521,7 @@ class PendingReason_Item extends CommonDBRelation
         // Let's check if there is any real updates before going any further
         $pending_updates_timeline_item = [];
 
-        $fields_to_check_for_updates = ['pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until'];
+        $fields_to_check_for_updates = ['pendingreasons_id', 'followup_frequency', 'followups_before_resolution'];
         foreach ($fields_to_check_for_updates as $field) {
             if (
                 isset($new_timeline_item->input[$field])
@@ -529,6 +529,14 @@ class PendingReason_Item extends CommonDBRelation
             ) {
                 $pending_updates_timeline_item[$field] = $new_timeline_item->input[$field];
             }
+        }
+
+        // The end date is nullable: a null value (cleared date) is a real update
+        if (
+            array_key_exists('pending_until', $new_timeline_item->input)
+            && $new_timeline_item->input['pending_until'] !== $last_pending->fields['pending_until']
+        ) {
+            $pending_updates_timeline_item['pending_until'] = $new_timeline_item->input['pending_until'];
         }
 
         // No actual updates -> nothing to be done
@@ -545,7 +553,7 @@ class PendingReason_Item extends CommonDBRelation
         // Update last pending item and parent
         if (
             ($ticket_pending_updates['pendingreasons_id'] ?? 0) > 0
-            || !empty($ticket_pending_updates['pending_until'])
+            || array_key_exists('pending_until', $ticket_pending_updates)
             || $new_timeline_item::class !== $last_pending::class
         ) {
             self::createForItem($new_timeline_item, $pending_updates_timeline_item);

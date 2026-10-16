@@ -2017,6 +2017,53 @@ class PendingReasonTest extends DbTestCase
         $this->assertEquals(CommonITILObject::ASSIGNED, $parent_pending->fields['previous_status']);
     }
 
+    public function testRePendingWithReasonUpdatesAndClearsDate(): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $ticket = $this->createAssignedTicketForPendingUntil();
+        $pending_reason = getItemByTypeName(PendingReason::class, 'needupdate_pendingreason');
+
+        $followup_input = [
+            'itemtype'                    => Ticket::class,
+            'items_id'                    => $ticket->getID(),
+            'pending'                     => 1,
+            'pendingreasons_id'           => $pending_reason->getID(),
+            'followup_frequency'          => 604800,
+            'followups_before_resolution' => 0,
+        ];
+        $this->createItem(ITILFollowup::class, $followup_input + [
+            'content'       => 'first',
+            'pending_until' => '2027-01-08 08:00:00',
+        ], ['pending', 'pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until']);
+
+        // Same reason, another date
+        $this->createItem(ITILFollowup::class, $followup_input + [
+            'content'       => 'second',
+            'pending_until' => '2027-03-01 08:00:00',
+        ], ['pending', 'pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until']);
+
+        $this->assertTrue($ticket->getFromDB($ticket->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $ticket->fields['status']);
+        $parent_pending = PendingReason_Item::getForItem($ticket);
+        $this->assertEquals($pending_reason->getID(), $parent_pending->fields['pendingreasons_id']);
+        $this->assertEquals('2027-03-01 08:00:00', $parent_pending->fields['pending_until']);
+        $this->assertEquals(CommonITILObject::ASSIGNED, $parent_pending->fields['previous_status']);
+
+        // Same reason, date cleared
+        $this->createItem(ITILFollowup::class, $followup_input + [
+            'content'       => 'third',
+            'pending_until' => '',
+        ], ['pending', 'pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until']);
+
+        $this->assertTrue($ticket->getFromDB($ticket->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $ticket->fields['status']);
+        $parent_pending = PendingReason_Item::getForItem($ticket);
+        $this->assertEquals($pending_reason->getID(), $parent_pending->fields['pendingreasons_id']);
+        $this->assertNull($parent_pending->getPendingUntilDate());
+        $this->assertEquals(CommonITILObject::ASSIGNED, $parent_pending->fields['previous_status']);
+    }
+
     public static function preparePendingUntilInputProvider(): iterable
     {
         // now = 2027-01-01 10:00:00
