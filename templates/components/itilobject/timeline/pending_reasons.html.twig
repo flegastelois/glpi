@@ -31,6 +31,7 @@
  #}
 
 {% import 'components/form/fields_macros.html.twig' as fields %}
+{% import 'components/form/basic_inputs_macros.html.twig' as inputs %}
 
 {% if call('PendingReason_Item::canDisplayPendingReasonForItem', [subitem]) %}
    {% set default_pending = call('PendingReason::getDefault') %}
@@ -115,7 +116,31 @@
          </script>
       </div>
 
-      <div class="collapse col-12 col-sm-8 {{ pendingreasons_id ? "show" : "" }}" id="pending-reasons-more_options_{{ rand }}">
+      <div class="col-12 col-sm-3">
+         {% set pending_until_value = pending_item ? pending_item.fields['pending_until'] : (pending_item_parent ? pending_item_parent.fields['pending_until'] : null) %}
+         {% set pending_until_field = inputs.datetime('pending_until', pending_until_value, {
+            'rand': rand,
+            'clearable': true,
+            'field_label': __('Pending until'),
+         }) %}
+         {% set pending_until_lbl %}
+            <i class="ti ti-calendar-pause" aria-hidden="true"></i>
+         {% endset %}
+         {{ fields.field(
+            'pending_until',
+            pending_until_field,
+            pending_until_lbl,
+            {
+               'field_class': 'flex-nowrap',
+               'label_class': 'col-1',
+               'input_class': 'col-10 ms-1',
+               'rand': rand,
+               'mb': '',
+            }
+         ) }}
+      </div>
+
+      <div class="collapse col-12 col-sm-5 {{ pendingreasons_id ? "show" : "" }}" id="pending-reasons-more_options_{{ rand }}">
          <div class="row">
             <div class="col-12 col-sm-6" title="{{ __('Automatic follow-up') }}"
                   data-bs-toggle="tooltip" data-bs-placement="top">

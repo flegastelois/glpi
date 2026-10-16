@@ -50,10 +50,12 @@
 
 {% if display_for_parent %}
     {% set pending_reason = pending_reason_item_parent ? call("PendingReason::getById", [pending_reason_item_parent.fields['pendingreasons_id']]) : false %}
+    {% set pending_until = pending_reason_item_parent ? pending_reason_item_parent.getPendingUntilDate() : null %}
 {% else %}
     {% set pending_item = pending_item ?? call(entry['type'] ~ "::getById", [entry_i['id']]) %}
     {% set pending_reason_item = pending_item ? call("PendingReason_Item::getForItem", [pending_item]) : false %}
     {% set pending_reason = pending_reason_item ? call("PendingReason::getById", [pending_reason_item.fields['pendingreasons_id']]) : false %}
+    {% set pending_until = pending_reason_item ? pending_reason_item.getPendingUntilDate() : null %}
     {% set is_latest_pending = call("PendingReason_Item::isLastPendingForItem", [
         item,
         pending_item
@@ -61,10 +63,23 @@
     {% set pending_reason_selected_context = is_latest_pending and pending_reason_item_parent != false ? 'pending' : 'done' %}
 {% endif %}
 
-{% if pending_reason %}
+{% if pending_reason or pending_until %}
     <span class="{{ pending_reason_contexts[pending_reason_selected_context].className }} {{ display_for_parent ? "mt-1 w-100 text-truncate" : "" }}">
       {{ pending_reason_contexts[pending_reason_selected_context].icon|raw }}
-        {{ (pending_reason_contexts[pending_reason_selected_context].text ~ ": %s"|format(pending_reason.getLink()))|raw }}
+        {% if pending_reason %}
+            {{ (pending_reason_contexts[pending_reason_selected_context].text ~ ": %s"|format(pending_reason.getLink()))|raw }}
+        {% else %}
+            {{ pending_reason_contexts[pending_reason_selected_context].text }}
+        {% endif %}
+
+        {% if pending_until %}
+            <span class="ms-2" data-testid="pending-until-badge"
+                  title="{{ __('Pending until %s')|format(pending_until|formatted_date) }}" data-bs-toggle="tooltip">
+                <i class="ti ti-calendar-pause me-1" aria-hidden="true"></i>
+                <span class="visually-hidden">{{ __('Pending until') }}</span>
+                {{ pending_until|formatted_date }}
+            </span>
+        {% endif %}
 
         {% if pending_reason_item_parent and (display_for_parent or call("PendingReason_Item::isLastPendingForItem", [
             item,
