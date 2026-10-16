@@ -59,13 +59,22 @@ trait ParentStatus
                 !$parent_pending_reason
                 || !$parent_pending_reason->fields['pendingreasons_id']
             ) {
+                // Keep data of an existing pending period without reason (e.g. end date only)
+                $pending_until = array_key_exists('pending_until', $input)
+                    ? $input['pending_until']
+                    : ($parent_pending_reason ? $parent_pending_reason->getPendingUntilDate() : null);
+                $previous_status = $parent_pending_reason
+                    ? $parent_pending_reason->fields['previous_status']
+                    : $parentitem->fields['status'];
+
                 PendingReason_Item::createForItem($parentitem, [
                     'pendingreasons_id'           => $input['pendingreasons_id'] ?? 0,
                     'followup_frequency'          => $input['followup_frequency'] ?? 0,
                     'followups_before_resolution' => $input['followups_before_resolution'] ?? 0,
-                    'previous_status'             => $parentitem->fields['status'],
+                    'previous_status'             => $previous_status,
                     'last_bump_date'              => $input["last_bump_date"] ?? $_SESSION["glpi_currenttime"],
                     'bump_count'                  => $input["bump_count"] ?? 0,
+                    'pending_until'               => $pending_until,
                 ]);
                 PendingReason_Item::createForItem($this, [
                     'pendingreasons_id'           => $input['pendingreasons_id'] ?? 0,
@@ -73,6 +82,7 @@ trait ParentStatus
                     'followups_before_resolution' => $input['followups_before_resolution'] ?? 0,
                     'last_bump_date'              => $input["last_bump_date"] ?? $_SESSION["glpi_currenttime"],
                     'bump_count'                  => $input["bump_count"] ?? 0,
+                    'pending_until'               => $pending_until,
                 ]);
             }
         }

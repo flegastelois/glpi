@@ -389,6 +389,11 @@ class ITILFollowup extends CommonDBChild
             return false;
         }
 
+        $input = PendingReason_Item::preparePendingUntilInput($input);
+        if ($input === false) {
+            return false;
+        }
+
         //Handle template
         if (isset($input['_itilfollowuptemplates_id'])) {
             $template = new ITILFollowupTemplate();
@@ -504,6 +509,15 @@ class ITILFollowup extends CommonDBChild
 
     public function prepareInputForUpdate($input)
     {
+        $current_pending = PendingReason_Item::getForItem($this);
+        $input = PendingReason_Item::preparePendingUntilInput(
+            $input,
+            $current_pending ? $current_pending->getPendingUntilDate() : null
+        );
+        if ($input === false) {
+            return false;
+        }
+
         if (!isset($this->fields['itemtype']) || !is_a($this->fields['itemtype'], CommonDBTM::class, true)) {
             return false;
         }

@@ -545,6 +545,15 @@ abstract class CommonITILTask extends CommonDBTM implements CalDAVCompatibleItem
 
     public function prepareInputForUpdate($input)
     {
+        $current_pending = PendingReason_Item::getForItem($this);
+        $input = PendingReason_Item::preparePendingUntilInput(
+            $input,
+            $current_pending ? $current_pending->getPendingUntilDate() : null
+        );
+        if ($input === false) {
+            return false;
+        }
+
         if (array_key_exists('content', $input) && empty($input['content'])) {
             Session::addMessageAfterRedirect(
                 __s("You can't remove description of a task."),
@@ -721,6 +730,10 @@ abstract class CommonITILTask extends CommonDBTM implements CalDAVCompatibleItem
 
     public function prepareInputForAdd($input)
     {
+        $input = PendingReason_Item::preparePendingUntilInput($input);
+        if ($input === false) {
+            return false;
+        }
 
         // Handle template
         if (isset($input['_tasktemplates_id'])) {

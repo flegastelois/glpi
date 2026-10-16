@@ -521,7 +521,7 @@ class PendingReason_Item extends CommonDBRelation
         // Let's check if there is any real updates before going any further
         $pending_updates_timeline_item = [];
 
-        $fields_to_check_for_updates = ['pendingreasons_id', 'followup_frequency', 'followups_before_resolution'];
+        $fields_to_check_for_updates = ['pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until'];
         foreach ($fields_to_check_for_updates as $field) {
             if (
                 isset($new_timeline_item->input[$field])
@@ -543,7 +543,11 @@ class PendingReason_Item extends CommonDBRelation
         $pending_updates_timeline_item['itemtype'] = $new_timeline_item::class;
 
         // Update last pending item and parent
-        if ($ticket_pending_updates['pendingreasons_id'] > 0 || $new_timeline_item::class !== $last_pending::class) {
+        if (
+            ($ticket_pending_updates['pendingreasons_id'] ?? 0) > 0
+            || !empty($ticket_pending_updates['pending_until'])
+            || $new_timeline_item::class !== $last_pending::class
+        ) {
             self::createForItem($new_timeline_item, $pending_updates_timeline_item);
         }
         self::updateForItem($new_timeline_item->input['_job'], $ticket_pending_updates);
@@ -572,6 +576,9 @@ class PendingReason_Item extends CommonDBRelation
                 }
                 if (isset($timeline_item->input['followups_before_resolution'])) {
                     $pending_updates['followups_before_resolution'] = $timeline_item->input['followups_before_resolution'];
+                }
+                if (array_key_exists('pending_until', $timeline_item->input)) {
+                    $pending_updates['pending_until'] = $timeline_item->input['pending_until'];
                 }
 
                 if (count($pending_updates) > 0) {
@@ -602,23 +609,27 @@ class PendingReason_Item extends CommonDBRelation
             // Not pending yet; did it change ?
             if (
                 ($timeline_item->input['pending'] ?? 0)
-                && isset($timeline_item->input['pendingreasons_id'])
-                && $timeline_item->input['pendingreasons_id'] > 0
+                && (
+                    ($timeline_item->input['pendingreasons_id'] ?? 0) > 0
+                    || !empty($timeline_item->input['pending_until'])
+                )
             ) {
                 // Set parent status
                 $timeline_item->input['_status'] = CommonITILObject::WAITING;
 
                 // Create pending_item data for event and parent
                 self::createForItem($timeline_item->input["_job"], [
-                    'pendingreasons_id' => $timeline_item->input['pendingreasons_id'],
-                    'followup_frequency'         => $timeline_item->input['followup_frequency'] ?? 0,
-                    'followups_before_resolution'        => $timeline_item->input['followups_before_resolution'] ?? 0,
-                    'previous_status'              => $timeline_item->input["_job"]->fields['status'],
+                    'pendingreasons_id'           => $timeline_item->input['pendingreasons_id'] ?? 0,
+                    'followup_frequency'          => $timeline_item->input['followup_frequency'] ?? 0,
+                    'followups_before_resolution' => $timeline_item->input['followups_before_resolution'] ?? 0,
+                    'previous_status'             => $timeline_item->input["_job"]->fields['status'],
+                    'pending_until'               => $timeline_item->input['pending_until'] ?? null,
                 ]);
                 self::createForItem($timeline_item, [
-                    'pendingreasons_id' => $timeline_item->input['pendingreasons_id'],
-                    'followup_frequency'         => $timeline_item->input['followup_frequency'] ?? 0,
-                    'followups_before_resolution'        => $timeline_item->input['followups_before_resolution'] ?? 0,
+                    'pendingreasons_id'           => $timeline_item->input['pendingreasons_id'] ?? 0,
+                    'followup_frequency'          => $timeline_item->input['followup_frequency'] ?? 0,
+                    'followups_before_resolution' => $timeline_item->input['followups_before_resolution'] ?? 0,
+                    'pending_until'               => $timeline_item->input['pending_until'] ?? null,
                 ]);
             }
         }
