@@ -116,7 +116,7 @@
          </script>
       </div>
 
-      <div class="col-12 col-sm" style="min-width: 11rem;">
+      <div class="col-12 col-sm" style="min-width: 14rem;">
          {% set pending_until_value = pending_item ? pending_item.fields['pending_until'] : (pending_item_parent ? pending_item_parent.fields['pending_until'] : null) %}
          {% set pending_until_field = inputs.datetime('pending_until', pending_until_value, {
             'rand': rand,

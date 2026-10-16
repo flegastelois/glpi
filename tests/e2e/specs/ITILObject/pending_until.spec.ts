@@ -55,7 +55,7 @@ test('shows the pending end date field when pending is checked', async ({ profil
 
     // The date must be readable and typable: the picker needs a usable width
     const box = await followup_block.getByLabel('Pending until').boundingBox();
-    expect(box?.width).toBeGreaterThanOrEqual(120);
+    expect(box?.width).toBeGreaterThanOrEqual(150);
 });
 
 test('displays the pending end date in the timeline', async ({ profile, page, api }) => {
