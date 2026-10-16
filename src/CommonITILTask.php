@@ -730,7 +730,19 @@ abstract class CommonITILTask extends CommonDBTM implements CalDAVCompatibleItem
 
     public function prepareInputForAdd($input)
     {
-        $input = PendingReason_Item::preparePendingUntilInput($input);
+        // The form pre-fills the end date of the parent: keep accepting it once passed (cron not run yet)
+        $parent_pending = false;
+        $parent_item = static::getItilObjectItemInstance();
+        if (
+            isset($input[$parent_item->getForeignKeyField()])
+            && $parent_item->getFromDB((int) $input[$parent_item->getForeignKeyField()])
+        ) {
+            $parent_pending = PendingReason_Item::getForItem($parent_item);
+        }
+        $input = PendingReason_Item::preparePendingUntilInput(
+            $input,
+            $parent_pending ? $parent_pending->getPendingUntilDate() : null
+        );
         if ($input === false) {
             return false;
         }

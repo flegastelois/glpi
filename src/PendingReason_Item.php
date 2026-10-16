@@ -545,7 +545,16 @@ class PendingReason_Item extends CommonDBRelation
         }
 
         $ticket_pending_updates += $pending_updates_timeline_item;
-        $pending_updates_timeline_item = $ticket_pending_updates;
+
+        // The new timeline item becomes the last pending one: store the whole
+        // effective pending state, not only the changed fields
+        $current_pending = self::getForItem($new_timeline_item->input['_job']) ?: $last_pending;
+        $pending_updates_timeline_item = array_replace([
+            'pendingreasons_id'           => $current_pending->fields['pendingreasons_id'],
+            'followup_frequency'          => $current_pending->fields['followup_frequency'],
+            'followups_before_resolution' => $current_pending->fields['followups_before_resolution'],
+            'pending_until'               => $current_pending->fields['pending_until'],
+        ], $ticket_pending_updates);
 
         $pending_updates_timeline_item['items_id'] = $new_timeline_item->getID();
         $pending_updates_timeline_item['itemtype'] = $new_timeline_item::class;
@@ -625,12 +634,18 @@ class PendingReason_Item extends CommonDBRelation
                 // Set parent status
                 $timeline_item->input['_status'] = CommonITILObject::WAITING;
 
+                // Keep the status stored by an existing pending period (parent is then already pending)
+                $parent_pending = self::getForItem($timeline_item->input["_job"]);
+                $previous_status = $parent_pending
+                    ? $parent_pending->fields['previous_status']
+                    : $timeline_item->input["_job"]->fields['status'];
+
                 // Create pending_item data for event and parent
                 self::createForItem($timeline_item->input["_job"], [
                     'pendingreasons_id'           => $timeline_item->input['pendingreasons_id'] ?? 0,
                     'followup_frequency'          => $timeline_item->input['followup_frequency'] ?? 0,
                     'followups_before_resolution' => $timeline_item->input['followups_before_resolution'] ?? 0,
-                    'previous_status'             => $timeline_item->input["_job"]->fields['status'],
+                    'previous_status'             => $previous_status,
                     'pending_until'               => $timeline_item->input['pending_until'] ?? null,
                 ]);
                 self::createForItem($timeline_item, [

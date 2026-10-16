@@ -389,7 +389,12 @@ class ITILFollowup extends CommonDBChild
             return false;
         }
 
-        $input = PendingReason_Item::preparePendingUntilInput($input);
+        // The form pre-fills the end date of the parent: keep accepting it once passed (cron not run yet)
+        $parent_pending = PendingReason_Item::getForItem($parent_item);
+        $input = PendingReason_Item::preparePendingUntilInput(
+            $input,
+            $parent_pending ? $parent_pending->getPendingUntilDate() : null
+        );
         if ($input === false) {
             return false;
         }

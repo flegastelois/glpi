@@ -2064,6 +2064,154 @@ class PendingReasonTest extends DbTestCase
         $this->assertEquals(CommonITILObject::ASSIGNED, $parent_pending->fields['previous_status']);
     }
 
+    public function testRePendingWithReasonAndNewDateKeepsReasonOnEdit(): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $ticket = $this->createAssignedTicketForPendingUntil();
+        $pending_reason = getItemByTypeName(PendingReason::class, 'needupdate_pendingreason');
+
+        $followup_input = [
+            'itemtype'                    => Ticket::class,
+            'items_id'                    => $ticket->getID(),
+            'pending'                     => 1,
+            'pendingreasons_id'           => $pending_reason->getID(),
+            'followup_frequency'          => 604800,
+            'followups_before_resolution' => 0,
+        ];
+        $this->createItem(ITILFollowup::class, $followup_input + [
+            'content'       => 'first',
+            'pending_until' => '2027-01-08 08:00:00',
+        ], ['pending', 'pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until']);
+
+        // Same reason, only the date changes
+        $second = $this->createItem(ITILFollowup::class, $followup_input + [
+            'content'       => 'second',
+            'pending_until' => '2027-03-01 08:00:00',
+        ], ['pending', 'pendingreasons_id', 'followup_frequency', 'followups_before_resolution', 'pending_until']);
+
+        // The new followup carries the whole active pending state, not only the changed date
+        $second_pending = PendingReason_Item::getForItem($second);
+        $this->assertNotFalse($second_pending);
+        $this->assertEquals($pending_reason->getID(), $second_pending->fields['pendingreasons_id']);
+        $this->assertEquals(604800, $second_pending->fields['followup_frequency']);
+        $this->assertEquals('2027-03-01 08:00:00', $second_pending->fields['pending_until']);
+        $this->assertTrue(PendingReason_Item::isLastPendingForItem($ticket, $second));
+
+        // Edit the second followup as the form posts it (pre-filled from its own pending data)
+        $this->assertTrue($second->update([
+            'id'                          => $second->getID(),
+            'content'                     => 'second, edited',
+            'pending'                     => 1,
+            'pendingreasons_id'           => $second_pending->fields['pendingreasons_id'],
+            'followup_frequency'          => $second_pending->fields['followup_frequency'],
+            'followups_before_resolution' => $second_pending->fields['followups_before_resolution'],
+            'pending_until'               => '2027-03-01 08:00',
+        ]));
+
+        $this->assertTrue($ticket->getFromDB($ticket->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $ticket->fields['status']);
+        $parent_pending = PendingReason_Item::getForItem($ticket);
+        $this->assertEquals($pending_reason->getID(), $parent_pending->fields['pendingreasons_id']);
+        $this->assertEquals(604800, $parent_pending->fields['followup_frequency']);
+        $this->assertEquals('2027-03-01 08:00:00', $parent_pending->fields['pending_until']);
+    }
+
+    public static function addWithPastParentPendingUntilProvider(): iterable
+    {
+        yield [ITILFollowup::class];
+        yield [TicketTask::class];
+    }
+
+    #[DataProvider('addWithPastParentPendingUntilProvider')]
+    public function testAddWithPastParentPendingUntilBeforeCron(string $itemtype): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $ticket = $this->createAssignedTicketForPendingUntil();
+        $this->createItem(ITILFollowup::class, [
+            'itemtype'      => Ticket::class,
+            'items_id'      => $ticket->getID(),
+            'content'       => 'wait',
+            'pending'       => 1,
+            'pending_until' => '2027-01-08 08:00:00',
+        ], ['pending', 'pending_until']);
+
+        // End date reached, cron not run yet
+        $_SESSION['glpi_currenttime'] = '2027-01-08 09:00:00';
+
+        $base_input = $itemtype === ITILFollowup::class
+            ? ['itemtype' => Ticket::class, 'items_id' => $ticket->getID()]
+            : ['tickets_id' => $ticket->getID()];
+
+        // The new item form pre-fills the date of the ticket: it must be accepted untouched
+        $this->createItem($itemtype, $base_input + [
+            'content'       => 'untouched pre-filled date',
+            'pending'       => 1,
+            'pending_until' => '2027-01-08 08:00',
+        ], ['pending', 'pending_until']);
+        $this->assertTrue($ticket->getFromDB($ticket->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $ticket->fields['status']);
+        $this->assertEquals('2027-01-08 08:00:00', PendingReason_Item::getForItem($ticket)->getPendingUntilDate());
+
+        // Another past date is still refused
+        $timeline_item = new $itemtype();
+        $this->assertFalse($timeline_item->add($base_input + [
+            'content'       => 'other past date',
+            'pending'       => 1,
+            'pending_until' => '2027-01-07 08:00',
+        ]));
+        $this->hasSessionMessages(ERROR, ['The pending end date must be in the future.']);
+    }
+
+    public function testEditNonPendingFollowupToPendingKeepsPreviousStatus(): void
+    {
+        $this->login();
+        $_SESSION['glpi_currenttime'] = '2027-01-01 10:00:00';
+        $problem = $this->createItem(Problem::class, [
+            'name'                => __FUNCTION__,
+            'content'             => __FUNCTION__,
+            'status'              => CommonITILObject::OBSERVED,
+            '_users_id_requester' => getItemByTypeName('User', 'post-only', true),
+            '_users_id_assign'    => getItemByTypeName('User', TU_USER, true),
+            'entities_id'         => getItemByTypeName('Entity', '_test_root_entity', true),
+        ]);
+        $this->createItem(ITILFollowup::class, [
+            'itemtype'      => Problem::class,
+            'items_id'      => $problem->getID(),
+            'content'       => 'wait',
+            'pending'       => 1,
+            'pending_until' => '2027-01-08 08:00:00',
+        ], ['pending', 'pending_until']);
+
+        // Followup without pending information (API, ...) by an assignee: the problem stays pending
+        $followup = $this->createItem(ITILFollowup::class, [
+            'itemtype' => Problem::class,
+            'items_id' => $problem->getID(),
+            'content'  => 'not pending',
+        ]);
+        $this->assertTrue($problem->getFromDB($problem->getID()));
+        $this->assertEquals(CommonITILObject::WAITING, $problem->fields['status']);
+        $this->assertFalse(PendingReason_Item::getForItem($followup));
+
+        // Its edit form has the pending switch checked and the date pre-filled from the problem
+        $this->assertTrue($followup->update([
+            'id'            => $followup->getID(),
+            'content'       => 'not pending, edited',
+            'pending'       => 1,
+            'pending_until' => '2027-01-08 08:00',
+        ]));
+
+        $parent_pending = PendingReason_Item::getForItem($problem);
+        $this->assertNotFalse($parent_pending);
+        $this->assertEquals(CommonITILObject::OBSERVED, $parent_pending->fields['previous_status']);
+
+        $_SESSION['glpi_currenttime'] = '2027-01-08 09:00:00';
+        \PendingReasonCron::cronPendingreason_autobump_autosolve(new \CronTask());
+        $this->assertTrue($problem->getFromDB($problem->getID()));
+        $this->assertEquals(CommonITILObject::OBSERVED, $problem->fields['status']);
+    }
+
     public static function preparePendingUntilInputProvider(): iterable
     {
         // now = 2027-01-01 10:00:00
