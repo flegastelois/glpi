@@ -339,8 +339,8 @@ class SearchTest extends DbTestCase
                 array_map(static fn($row) => $row['Computer_1'][0]['name'], $data['data']['rows'])
             );
 
-            // Sort on a joined column: no deferred join, but the request is still paginated
-            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [80], 'order' => ['ASC']]);
+            // Sort on a multi-valued column (operating system): no deferred join, but the request is still paginated
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [45], 'order' => ['ASC']]);
             $this->assertStringNotContainsString('page_ids', $data['sql']['search']);
             $this->assertStringContainsString('LIMIT 0, 2', $data['sql']['search']);
             $this->assertSame(3, (int) $data['data']['totalcount']);
@@ -395,6 +395,151 @@ class SearchTest extends DbTestCase
         // Sort on the title (which selects the same column twice) uses the deferred join
         $this->assertGreaterThan(0, $deferred_count);
         $data = $this->doSearch(Ticket::class, ['criteria' => $criteria, 'sort' => [1], 'order' => ['ASC']]);
+        $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
+    }
+
+    public function testPaginatedSearchSortedOnLinkedTableColumn(): void
+    {
+        $this->login();
+        $entity_id = $this->getTestRootEntity(only_id: true);
+
+        // Computer name => location name
+        foreach ([1 => 'C', 2 => 'A', 3 => 'B'] as $i => $location_name) {
+            $location = $this->createItem(Location::class, [
+                'name'        => __FUNCTION__ . ' ' . $location_name,
+                'entities_id' => $entity_id,
+            ]);
+            $this->createItem(Computer::class, [
+                'name'         => __FUNCTION__ . ' ' . $i,
+                'entities_id'  => $entity_id,
+                'locations_id' => $location->getID(),
+            ]);
+        }
+
+        $list_limit = $_SESSION['glpilist_limit'];
+        $_SESSION['glpilist_limit'] = 2;
+        try {
+            $criteria = [
+                [
+                    'field'      => 1, // name
+                    'searchtype' => 'contains',
+                    'value'      => __FUNCTION__,
+                ],
+            ];
+            $get_names = static fn(array $data): array => array_map(
+                static fn($row) => $row['Computer_1'][0]['name'],
+                $data['data']['rows']
+            );
+
+            // Page ids are sorted on the location, joined alone in the page ids request,
+            // without DISTINCT as there is no default join for computers
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [3], 'order' => ['ASC']]);
+            $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
+            $this->assertStringContainsString(
+                'IN (SELECT `id` FROM (SELECT `glpi_computers`.`id` AS id, `glpi_locations`.`completename` AS `ITEM_Computer_3` FROM `glpi_computers` LEFT JOIN `glpi_locations`',
+                $data['sql']['search']
+            );
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertSame([__FUNCTION__ . ' 2', __FUNCTION__ . ' 3'], $get_names($data));
+
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 2, 'sort' => [3], 'order' => ['ASC']]);
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertSame([__FUNCTION__ . ' 1'], $get_names($data));
+
+            $data = $this->doSearch(Computer::class, ['criteria' => $criteria, 'start' => 0, 'sort' => [3], 'order' => ['DESC']]);
+            $this->assertSame([__FUNCTION__ . ' 1', __FUNCTION__ . ' 3'], $get_names($data));
+        } finally {
+            $_SESSION['glpilist_limit'] = $list_limit;
+        }
+    }
+
+    public function testPaginatedSearchCountsOnlyWhenPageIsFull(): void
+    {
+        $this->login();
+        $entity_id = $this->getTestRootEntity(only_id: true);
+
+        foreach ([1, 2, 3] as $i) {
+            $this->createItem(Computer::class, [
+                'name'        => __FUNCTION__ . ' ' . $i,
+                'entities_id' => $entity_id,
+            ]);
+        }
+
+        $list_limit = $_SESSION['glpilist_limit'];
+        $_SESSION['glpilist_limit'] = 2;
+        try {
+            $name = __FUNCTION__;
+            $search = static function (int $start) use ($name): array {
+                $params = \Search::manageParams(Computer::class, [
+                    'reset'    => 'reset',
+                    'criteria' => [['field' => 1, 'searchtype' => 'contains', 'value' => $name]],
+                    'start'    => $start,
+                    'sort'     => [1],
+                    'order'    => ['ASC'],
+                ]);
+                $data = SearchEngine::prepareDataForSearch(Computer::class, $params);
+                SQLProvider::constructSQL($data);
+                // Fake count request, to know whether it is executed
+                $data['sql']['count'] = ['SELECT 42'];
+                SQLProvider::constructData($data);
+                return $data;
+            };
+
+            // Full page: matching items are counted
+            $data = $search(0);
+            $this->assertSame(42, (int) $data['data']['totalcount']);
+            $this->assertCount(2, $data['data']['rows']);
+
+            // Last page is not full: total is known without counting
+            $data = $search(2);
+            $this->assertSame(3, (int) $data['data']['totalcount']);
+            $this->assertCount(1, $data['data']['rows']);
+        } finally {
+            $_SESSION['glpilist_limit'] = $list_limit;
+        }
+    }
+
+    public static function paginatedSearchSortedOnEachOptionProvider(): iterable
+    {
+        yield [Ticket::class];
+        yield [Computer::class];
+    }
+
+    #[DataProvider('paginatedSearchSortedOnEachOptionProvider')]
+    public function testPaginatedSearchSortedOnEachOption(string $itemtype): void
+    {
+        $this->login();
+
+        $this->createItem($itemtype, [
+            'name'        => __FUNCTION__,
+            'entities_id' => $this->getTestRootEntity(only_id: true),
+        ] + ($itemtype === Ticket::class ? ['content' => __FUNCTION__] : []));
+
+        $criteria = [
+            [
+                'field'      => 1, // name
+                'searchtype' => 'contains',
+                'value'      => __FUNCTION__,
+            ],
+        ];
+        $deferred_count = 0;
+        foreach (SearchOption::getOptionsForItemtype($itemtype) as $id => $option) {
+            if (!is_int($id) || !is_array($option) || ($option['nosort'] ?? false)) {
+                continue;
+            }
+            foreach (['ASC', 'DESC'] as $order) {
+                $data = $this->doSearch($itemtype, ['criteria' => $criteria, 'sort' => [$id], 'order' => [$order]]);
+                $this->assertSame(1, (int) $data['data']['totalcount'], "Sort on option $id $order");
+                $this->assertCount(1, $data['data']['rows'], "Sort on option $id $order");
+                if (str_contains($data['sql']['search'], 'page_ids')) {
+                    $deferred_count++;
+                }
+            }
+        }
+        $this->assertGreaterThan(0, $deferred_count);
+
+        // Sort on the entity (linked table) uses the deferred join
+        $data = $this->doSearch($itemtype, ['criteria' => $criteria, 'sort' => [80], 'order' => ['ASC']]);
         $this->assertStringContainsString('AS `page_ids`', $data['sql']['search']);
     }
 
@@ -520,6 +665,9 @@ class SearchTest extends DbTestCase
         $raw = $data['sql']['raw'];
         $data['sql']['search'] = $raw['SELECT'] . $raw['FROM'] . $raw['WHERE']
             . $raw['HAVING'] . $raw['ORDER'] . $raw['LIMIT'];
+        // The handcrafted request is not paginated: rows are counted from its result
+        $data['search']['paginated_search'] = false;
+        $data['sql']['first_page'] = null;
         SQLProvider::constructData($data);
 
         // The row exists but must not be listed as a found item
@@ -4180,10 +4328,8 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_authldaps`.`port` IS NULL OR `glpi_authldaps`.`port` = '')",
                 'expected_and_not'  => "(`glpi_authldaps`.`port` IS NOT NULL AND `glpi_authldaps`.`port` <> '')",
             ];
-            // log for both AND and AND NOT cases, for both search and count requests
+            // log for both AND and AND NOT cases
             if ($is_mariadb) {
-                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
-                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             }
@@ -4196,10 +4342,8 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_authldaps`.`timeout` IS NULL OR `glpi_authldaps`.`timeout` = '')",
                 'expected_and_not'  => "(`glpi_authldaps`.`timeout` IS NOT NULL AND `glpi_authldaps`.`timeout` <> '')",
             ];
-            // log for both AND and AND NOT cases, for both search and count requests
+            // log for both AND and AND NOT cases
             if ($is_mariadb) {
-                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
-                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             }
@@ -4221,9 +4365,7 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_budgets`.`value` IS NULL OR `glpi_budgets`.`value` = '')",
                 'expected_and_not'  => "(`glpi_budgets`.`value` IS NOT NULL AND `glpi_budgets`.`value` <> '')",
             ];
-            // log for both AND and AND NOT cases, for both search and count requests
-            $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
-            $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
+            // log for both AND and AND NOT cases
             $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
             $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
 
@@ -4276,9 +4418,9 @@ class SearchTest extends DbTestCase
                 'expected_and'      => "(`glpi_crontasks`.`frequency` IS NULL OR `glpi_crontasks`.`frequency` = '')",
                 'expected_and_not'  => "(`glpi_crontasks`.`frequency` IS NOT NULL AND `glpi_crontasks`.`frequency` <> '')",
             ];
-            // log for both AND and AND NOT cases, for both search and count requests
+            // log for both AND and AND NOT cases, and for the count request of the AND NOT case
+            // (its first page is full, so matching items are counted)
             if ($is_mariadb) {
-                $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);
                 $this->hasPhpLogRecordThatContains("Truncated incorrect DECIMAL value: ''", LogLevel::WARNING);

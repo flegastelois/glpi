@@ -4374,6 +4374,7 @@ final class SQLProvider implements SearchProviderInterface
         // Add default join
         $COMMONLEFTJOIN = Search::addDefaultJoin($data['itemtype'], $itemtable, $already_link_tables);
         $FROM          .= $COMMONLEFTJOIN;
+        $common_link_tables = $already_link_tables;
 
         // Add all table for toview items
         foreach ($data['tocompute'] as $val) {
@@ -4840,7 +4841,8 @@ final class SQLProvider implements SearchProviderInterface
             }
 
             // Deferred join: select the ids of the displayed page on the main table only (which can
-            // use its indexes), then compute the displayed columns for these items only.
+            // use its indexes), joined only with the tables of the sort columns, then compute the
+            // displayed columns for these items only.
             // Otherwise, every matching item is joined, grouped and sorted before the LIMIT applies.
             $build_query = static fn(string $where, string $limit): string => $SELECT
                 . $FROM
@@ -4850,12 +4852,10 @@ final class SQLProvider implements SearchProviderInterface
                 . $ORDER
                 . $limit;
             $sort_options = array_column($sort_fields, 'searchopt_id');
-            if (
-                $LIMIT !== ''
-                && $main_table_criteria
-                && !($data['search']['as_map'] ?? false)
-                && self::areMainTableOptions($data['itemtype'], $sort_options, $searchopt, $itemtable)
-            ) {
+            $page_ids_joins = $LIMIT !== '' && $main_table_criteria && !($data['search']['as_map'] ?? false)
+                ? self::getPageIdsSortJoins($data['itemtype'], $sort_options, $searchopt, $itemtable, $common_link_tables)
+                : null;
+            if ($page_ids_joins !== null) {
                 // A derived table cannot contain duplicated column names, whereas some search options
                 // select the same aliased column twice.
                 $page_ids_columns = ['id' => "`$itemtable`.`id` AS id"];
@@ -4867,10 +4867,14 @@ final class SQLProvider implements SearchProviderInterface
                         $page_ids_columns[$alias] ??= $column;
                     }
                 }
-                $page_ids_select = "SELECT DISTINCT " . implode(', ', $page_ids_columns);
+                // Sort joins yield at most one row per item: only the default join may duplicate items.
+                // Avoid DISTINCT otherwise, as it prevents MySQL from keeping only the rows of the page
+                // while sorting.
+                $page_ids_select = "SELECT " . (trim($COMMONLEFTJOIN) !== '' ? 'DISTINCT ' : '')
+                    . implode(', ', $page_ids_columns);
                 $page_where = static fn(int $start): string => (!empty($WHERE) ? $WHERE . ' AND ' : ' WHERE ')
                     . "`$itemtable`.`id` IN (SELECT `id` FROM ("
-                    . $page_ids_select . $MAIN_FROM . $WHERE . $ORDER
+                    . $page_ids_select . $MAIN_FROM . $page_ids_joins . $WHERE . $ORDER
                     . " LIMIT " . $start . ", " . (int) $data['search']['list_limit']
                     . ") AS `page_ids`)";
                 $QUERY = $build_query($page_where((int) $data['search']['start']), '');
@@ -5241,6 +5245,15 @@ final class SQLProvider implements SearchProviderInterface
                     || (count($data['sql']['count']) == 0)
                 ) {
                     $data['data']['totalcount'] = $DBread->numrows($result);
+                } elseif (
+                    $paginated_search
+                    && $result instanceof mysqli_result
+                    && ($page_rows = $DBread->numrows($result)) < (int) $data['search']['list_limit']
+                    && ($page_rows > 0 || (int) $data['search']['start'] === 0)
+                ) {
+                    // The displayed page is not full (or is an empty first page), so it is the last one:
+                    // no need to count matching items
+                    $data['data']['totalcount'] = (int) $data['search']['start'] + $page_rows;
                 } else {
                     foreach ($data['sql']['count'] as $sqlcount) {
                         /** @var mysqli_result $result_num */
@@ -7336,6 +7349,67 @@ final class SQLProvider implements SearchProviderInterface
             }
         }
         return true;
+    }
+
+    /**
+     * Get the joins required to sort the ids of the displayed page without the other display joins.
+     *
+     * Each sort option must either rely on the main table only, or on a table linked by a foreign key
+     * of the main table (standard join on the linked table id): such a join yields at most one row
+     * per item, so it changes neither the matching items nor their count.
+     *
+     * @param class-string<CommonDBTM> $itemtype
+     * @param array<int|string> $options
+     * @param array<mixed> $searchopt
+     * @param string $itemtable
+     * @param array<string> $already_link_tables Tables already linked by the default join
+     * @return string|null Joins to add (empty string when none is needed), or null when the page ids
+     *                     cannot be sorted without the display joins
+     */
+    private static function getPageIdsSortJoins(
+        string $itemtype,
+        array $options,
+        array $searchopt,
+        string $itemtable,
+        array $already_link_tables
+    ): ?string {
+        $joins = '';
+        foreach ($options as $option) {
+            if (self::areMainTableOptions($itemtype, [$option], $searchopt, $itemtable)) {
+                continue;
+            }
+            $opt = $searchopt[$option] ?? null;
+            if (
+                !is_array($opt)
+                || !isset($opt['table'])
+                || $opt['table'] === $itemtable
+                || empty($opt['linkfield'])
+                || Search::isVirtualField($opt['linkfield'])
+                || !empty($opt['forcegroupby'])
+                || !empty($opt['usehaving'])
+                || !empty($opt['computation'])
+                || !empty($opt['nosql'])
+                || isset($opt['joinparams']['beforejoin'])
+                || ($opt['joinparams']['jointype'] ?? 'standard') !== 'standard'
+                // Plugins may define their own joins
+                || isPluginItemType($itemtype) !== false
+                || str_starts_with($opt['table'], 'glpi_plugin_')
+            ) {
+                return null;
+            }
+            $joins .= Search::addLeftJoin(
+                $itemtype,
+                $itemtable,
+                $already_link_tables,
+                $opt['table'],
+                $opt['linkfield'],
+                false,
+                '',
+                $opt['joinparams'] ?? [],
+                $opt['field'] ?? ''
+            );
+        }
+        return $joins;
     }
 
     /**
